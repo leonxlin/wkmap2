@@ -1,0 +1,3 @@
+enwiki-20220701-babel.sql.gz
+enwiki-20220701-siteinfo-namespaces.json.gz
+enwiki-20220701-siteinfo2-namespacesv2.json.gz
