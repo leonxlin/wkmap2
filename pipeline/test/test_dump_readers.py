@@ -19,3 +19,14 @@ class DumpReaderTest(unittest.TestCase):
               output,
               equal_to([45749]))
 
+    def test_page(self):
+        with TestPipeline() as p:
+            pairs = p | PageDumpReader(
+                    'pipeline/testdata/enwiki-20220701-page-55lines.sql')
+
+            output = pairs | beam.combiners.Count.Globally()
+
+            assert_that(
+              output,
+              equal_to([22328]))
+

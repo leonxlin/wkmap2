@@ -5,6 +5,6 @@ Wikipedia/Wikidata visualization. WIP.
 ## Testing
 
 ```
-python -m unittest
+python -m unittest -v
 ```
 

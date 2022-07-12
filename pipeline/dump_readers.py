@@ -16,6 +16,7 @@ def smart_line_reader(path: str, max_lines: Optional[int] = None):
 
 INSERT_PATTERN=re.compile(rb'INSERT INTO `.*` VALUES')
 
+
 # Based on the schema at 
 # https://www.mediawiki.org/wiki/Manual:Categorylinks_table
 #
@@ -32,6 +33,7 @@ CATEGORYLINKS_ROW_PATTERN=re.compile(
         rb'\)'
         )
 
+
 def parse_categorylinks_line(line: bytes):
     if not re.match(INSERT_PATTERN, line):
         return
@@ -41,7 +43,7 @@ def parse_categorylinks_line(line: bytes):
 
 @beam.ptransform_fn
 def CategorylinksDumpReader(_, path: str, max_lines: Optional[int] = None):
-    """Reader for MediaWiki categorylinks table MySQL dump files.
+    """Reader for MediaWiki `categorylinks` table MySQL dump files.
 
     This is hacky as it assumes the schema / dumpfile format will not
     change. Processing the dump file directly avoids the time-consuming
@@ -56,8 +58,59 @@ def CategorylinksDumpReader(_, path: str, max_lines: Optional[int] = None):
     lines = _ | 'ReadCategorylinksDumpFile' >> beam.Create(
             smart_line_reader(path, max_lines))
 
-    titles = lines | 'ParseCategorylinksLine' >> beam.FlatMap(
+    titles = lines | 'ParseCategorylinksDumpLine' >> beam.FlatMap(
             parse_categorylinks_line)
 
     return titles
+
+
+# Based on the schema at 
+# https://www.mediawiki.org/wiki/Manual:Page_table
+#
+# See unit tests for example data. 
+PAGE_ROW_PATTERN=re.compile(
+        rb'\('
+        rb'(?P<page_id>\d+),'
+        rb'(?P<page_namespace>\d+),'
+        rb"'(?P<page_title>.*?)',"
+        rb"(?P<page_restrictions>.*?),"
+        rb"(?P<page_is_redirect>\d+),"
+  		rb"(?P<page_is_new>.*?),"
+  		rb"(?P<page_random>.*?),"
+  		rb"(?P<page_touched>.*?),"
+  		rb"(?P<page_links_updated>.*?),"
+  		rb"(?P<page_latest>.*?),"
+  		rb"(?P<page_len>.*?),"
+  		rb"(?P<page_content_model>.*?),"
+  		rb"(?P<page_lang>.*?)"
+        rb'\)'
+        )
+
+
+def parse_page_line(line: bytes):
+    if not re.match(INSERT_PATTERN, line):
+        return
+    for match in re.finditer(PAGE_ROW_PATTERN, line):
+        yield (int(match.group('page_id')), match.group('page_title'))
+
+
+@beam.ptransform_fn
+def PageDumpReader(_, path: str, max_lines: Optional[int] = None):
+    """Reader for MediaWiki `page` table MySQL dump files.
+
+    This is hacky as it assumes the schema / dumpfile format will not
+    change. Processing the dump file directly avoids the time-consuming
+    step of restoring the MySQL database.
+
+    See the schema at https://www.mediawiki.org/wiki/Manual:Page_table
+
+    Args:
+        path: local or GCS, compressed or uncompressed.
+        max_lines: number of lines to truncate at, if present.
+    """
+    lines = _ | 'ReadPageDumpFile' >> beam.Create(
+            smart_line_reader(path, max_lines))
+
+    return lines | 'ParsePageDumpLine' >> beam.FlatMap(
+            parse_page_line)
 
