@@ -1,0 +1,2 @@
+enwiki-20220701-page.sql.gz
+enwiki-20220701-categorylinks.sql.gz
