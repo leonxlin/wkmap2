@@ -34,24 +34,24 @@ class Node(NamedTuple):
 	parents: Set[NodeId]
 
 
-def _sort_and_truncate_leaves(leaves, N):
-	return sorted(leaves, key=lambda leaf: -leaf.score)[:N]
+def _sorted_and_truncated(leaves, N):
+	return sorted(set(leaves), key=lambda leaf: -leaf.score)[:N]
 
 
 def CreateNodes(leaves, leaf_parent_links, node_links, N=10000):
 
 	leaf_info = {
 		'scores': leaves | beam.Map(lambda l: (l.leaf_id, l.score)),
-		'leaf_parents': leaf_parent_links | beam.Map(lambda link: (link.leaf_id, link.parent)),
+		'parents': leaf_parent_links | beam.Map(lambda link: (link.leaf_id, link.parent)),
 	}
 
 	def _process_join_leaf_info(join_item):
 		leaf_id, d = join_item
-		if not d['leaf_parents']:
+		if not d['parents']:
 			return
 		assert len(d['scores']) == 1
 		leaf = Leaf(leaf_id=leaf_id, score=d['scores'][0])
-		for parent_id in d['leaf_parents']:
+		for parent_id in d['parents']:
 			yield parent_id, leaf
 
 	parent_and_leaf = (leaf_info 
@@ -71,7 +71,7 @@ def CreateNodes(leaves, leaf_parent_links, node_links, N=10000):
 
 		yield Node(
 			node_id = node_id,
-			top_leaves = _sort_and_truncate_leaves(d['leaves'], N),
+			top_leaves = _sorted_and_truncated(d['leaves'], N),
 			children = set(d['children']),
 			unprocessed_children = set(d['children']),
 			parents = set(d['parents']),
@@ -83,5 +83,52 @@ def CreateNodes(leaves, leaf_parent_links, node_links, N=10000):
 
 	return nodes
 
+
+def CreateIndex(leaves, leaf_parent_links, node_links, N=10000):
+	nodes = CreateNodes(leaves, leaf_parent_links, node_links, N)
+
+	for i in range(5):
+		nodes = _PropagateLeavesOnce("S" + str(i), nodes, N)
+
+	return nodes
+
+def _PropagateLeavesOnce(stage_name: str, nodes, N: int):
+	def _generate_parent_child_pairs(node: Node):
+		if node.unprocessed_children:
+			# Don't propagate yet; more leaves may show up later.
+			return
+
+		for parent in node.parents:
+			yield parent, node
+
+	parent_info = {
+		'child_nodes': (nodes 
+			| (stage_name + "/KeyNodesByParent") >> beam.FlatMap(_generate_parent_child_pairs)),
+		'nodes': (nodes 
+			| (stage_name + "/KeyNodesById") >> beam.Map(lambda n: (n.node_id, n))),
+	}
+
+	def _process_join_parent(join_item):
+		node_id, d = join_item
+
+		assert len(d['nodes']) == 1
+		node = d['nodes'][0]
+
+		for child_node in d['child_nodes']:
+			if child_node.node_id in node.unprocessed_children:
+				node.top_leaves.extend(child_node.top_leaves)
+				node.unprocessed_children.remove(child_node.node_id)
+
+		sorted_leaves = _sorted_and_truncated(node.top_leaves, N)
+		node.top_leaves.clear()
+		node.top_leaves.extend(sorted_leaves)
+
+		return node
+
+
+
+	return (parent_info 
+		| (stage_name + "/JoinByParent") >> beam.CoGroupByKey()
+		| (stage_name + "/ProcessJoinbyParent") >> beam.Map(_process_join_parent))
 
 
