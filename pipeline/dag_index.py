@@ -84,31 +84,47 @@ def CreateNodes(leaves, leaf_parent_links, node_links, N=10000):
 	return nodes
 
 
-def CreateIndex(leaves, leaf_parent_links, node_links, N=10000):
+def CreateIndex(leaves, leaf_parent_links, node_links, iters=10, N=10000):
 	nodes = CreateNodes(leaves, leaf_parent_links, node_links, N)
 
-	for i in range(5):
-		nodes = _PropagateLeavesOnce("S" + str(i), nodes, N)
+	# Split nodes based on whether they are ready to propagate leaves upward.
+	pending, ready = (nodes | "SplitReadyNodes" 
+		>> beam.ParDo(_SplitReadyNodes()).with_outputs('pending', 'ready'))
+	done = []
 
-	return nodes
+	for i in range(iters):
+		done.append(ready)
+		pending, ready = _PropagateLeavesOnce(ready, pending, 
+			stage_name=f"PropagateLeavesIter{i}", N=N)
 
-def _PropagateLeavesOnce(stage_name: str, nodes, N: int):
-	def _generate_parent_child_pairs(node: Node):
+	return (done | beam.Flatten()), pending, ready
+
+
+class _SplitReadyNodes(beam.DoFn):	
+	"""Separates nodes based on whether they are ready to propagate their leaves upward."""
+	def process(self, node):
 		if node.unprocessed_children:
-			# Don't propagate yet; more leaves may show up later.
-			return
+			yield beam.pvalue.TaggedOutput('pending', node)
+		else:
+			yield beam.pvalue.TaggedOutput('ready', node)
 
+
+def _PropagateLeavesOnce(giving_nodes, receiving_nodes, stage_name: str = "", N=10000):
+
+	def _generate_parent_child_pairs(node: Node):
 		for parent in node.parents:
 			yield parent, node
 
 	parent_info = {
-		'child_nodes': (nodes 
-			| (stage_name + "/KeyNodesByParent") >> beam.FlatMap(_generate_parent_child_pairs)),
-		'nodes': (nodes 
-			| (stage_name + "/KeyNodesById") >> beam.Map(lambda n: (n.node_id, n))),
+		'child_nodes': (giving_nodes 
+			| (stage_name + "/KeyGivingNodesByParent") 
+			>> beam.FlatMap(_generate_parent_child_pairs)),
+		'nodes': (receiving_nodes 
+			| (stage_name + "/KeyReceivingNodesById")
+			>> beam.Map(lambda n: (n.node_id, n))),
 	}
 
-	def _process_join_parent(join_item):
+	def _process_join_parent(join_item):		
 		node_id, d = join_item
 
 		assert len(d['nodes']) == 1
@@ -122,13 +138,14 @@ def _PropagateLeavesOnce(stage_name: str, nodes, N: int):
 		sorted_leaves = _sorted_and_truncated(node.top_leaves, N)
 		node.top_leaves.clear()
 		node.top_leaves.extend(sorted_leaves)
-
 		return node
 
-
-
 	return (parent_info 
-		| (stage_name + "/JoinByParent") >> beam.CoGroupByKey()
-		| (stage_name + "/ProcessJoinbyParent") >> beam.Map(_process_join_parent))
+		| (stage_name + "/JoinByParent") 
+			>> beam.CoGroupByKey()
+		| (stage_name + "/ProcessJoinByParent") 
+			>> beam.Map(_process_join_parent)
+		| (stage_name + "/SplitReadyNodes")
+			>> beam.ParDo(_SplitReadyNodes()).with_outputs("pending", "ready"))
 
 
