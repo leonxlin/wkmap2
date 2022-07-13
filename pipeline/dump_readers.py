@@ -113,6 +113,8 @@ def PageDumpReader(_, path: str, max_lines: Optional[int] = None):
 
     See the schema at https://www.mediawiki.org/wiki/Manual:Page_table
 
+    TODO: consider filtering redirects, talk pages, etc. here.
+
     Args:
         path: local or GCS, compressed or uncompressed.
         max_lines: number of lines to truncate at, if present.
