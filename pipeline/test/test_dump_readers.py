@@ -10,10 +10,10 @@ class DumpReaderTest(unittest.TestCase):
     
     def test_categorylinks(self):
         with TestPipeline() as p:
-            titles = p | CategorylinksDumpReader(
+            items = p | CategorylinksDumpReader(
                     'pipeline/testdata/enwiki-20220701-categorylinks-50lines.sql')
 
-            output = titles | beam.combiners.Count.Globally()
+            output = items | beam.combiners.Count.Globally()
 
             assert_that(
               output,
@@ -21,12 +21,12 @@ class DumpReaderTest(unittest.TestCase):
 
     def test_page(self):
         with TestPipeline() as p:
-            pairs = p | PageDumpReader(
+            items = p | PageDumpReader(
                     'pipeline/testdata/enwiki-20220701-page-55lines.sql')
 
-            output = pairs | beam.combiners.Count.Globally()
+            output = items | beam.combiners.Count.Globally()
 
             assert_that(
               output,
-              equal_to([22328]))
+              equal_to([44660]))
 
