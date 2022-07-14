@@ -254,18 +254,6 @@ class QRankEntry(NamedTuple):
     qrank: int
 
 
-def _parse_qrank_line(line: str):
-    line = line.strip()
-    if line == 'Entity,QRank':
-        return
-
-    qid, _qrank = line.split(',')
-    yield QRankEntry(
-        qid=qid,
-        qrank=int(_qrank),
-    )
-
-
 @beam.ptransform_fn
 def QRankDumpReader(_, path: str, max_lines: Optional[int] = None):
     """Reader for QRank files.
@@ -278,12 +266,19 @@ def QRankDumpReader(_, path: str, max_lines: Optional[int] = None):
         path: local or GCS, compressed or uncompressed.
         max_lines: number of lines to truncate at, if present.
     """
-    lines = _ | 'ReadQRankDump' >> beam.Create(_line_reader(
+    lines = _line_reader(
         path, max_lines, mode='r', 
-        expected_header='pipeline/dump_headers/qrank.csv.template'))
+        expected_header='pipeline/dump_headers/qrank.csv.template')
 
-    return lines | 'ParseQRankDumpLine' >> beam.FlatMap(
-            _parse_qrank_line)
+    def _parse(line):
+        qid, _qrank = line.strip().split(',')
+        yield QRankEntry(
+            qid=qid,
+            qrank=int(_qrank),
+        )
+
+    return (_ | "ReadQRankDump"
+        >> beam.Create(_parse(line) for line in lines if line.strip()))
 
 
 
