@@ -2,7 +2,7 @@
 
 import re
 from itertools import islice
-from typing import Optional
+from typing import Optional, NamedTuple
 
 import apache_beam as beam
 from smart_open import open as smart_open, register_compressor
@@ -34,13 +34,18 @@ CATEGORYLINKS_ROW_PATTERN=re.compile(
         )
 
 
+class Categorylink(NamedTuple):
+    page_id: int
+    category: str
+
+
 def _parse_categorylinks_line(line: bytes):
     if not re.match(INSERT_PATTERN, line):
         return
     for match in re.finditer(CATEGORYLINKS_ROW_PATTERN, line):
-        yield (
-                int(match.group('cl_from')), 
-                match.group('cl_to').decode('utf-8'),
+        yield Categorylink(
+                page_id=int(match.group('cl_from')), 
+                category=match.group('cl_to').decode('utf-8'),
               )
 
 
@@ -48,13 +53,15 @@ def _parse_categorylinks_line(line: bytes):
 def CategorylinksDumpReader(_, path: str, max_lines: Optional[int] = None):
     """Reader for MediaWiki `categorylinks` table MySQL dump files.
 
-    Returns a PCollection of tuples (int page_id, str category name).
+    Returns a PCollection of Categorylink objects.
 
     The implementation is hacky: it processes the dump file directly in Python
     and assumes the schema / dumpfile format will not change. This avoids the 
     time-consuming step of restoring the MySQL database.
 
     See the schema at https://www.mediawiki.org/wiki/Manual:Categorylinks_table
+
+    TODO: verify schema.
 
     Args:
         path: local or GCS, compressed or uncompressed.
@@ -89,14 +96,22 @@ PAGE_ROW_PATTERN=re.compile(
         )
 
 
+class Page(NamedTuple):
+    page_id: int
+    namespace: int
+    title: str
+    is_redirect: bool
+
+
 def _parse_page_line(line: bytes):
     if not re.match(INSERT_PATTERN, line):
         return
     for match in re.finditer(PAGE_ROW_PATTERN, line):
-        yield (
-                int(match.group('page_id')),
-                match.group('page_title').decode('utf-8'),
-                bool(int(match.group('page_is_redirect'))),
+        yield Page(
+                page_id=int(match.group('page_id')),
+                namespace=int(match.group('page_namespace')),
+                title=match.group('page_title').decode('utf-8'),
+                is_redirect=bool(int(match.group('page_is_redirect'))),
               )
 
 
@@ -104,8 +119,7 @@ def _parse_page_line(line: bytes):
 def PageDumpReader(_, path: str, max_lines: Optional[int] = None):
     """Reader for MediaWiki `page` table MySQL dump files.
 
-    Returns a PCollection of tuples:
-        (int page_id, str page_title, bool is_redirect)
+    Returns a PCollection of Page objects.
 
     The implementation is hacky: it processes the dump file directly in Python
     and assumes the schema / dumpfile format will not change. This avoids the
@@ -114,6 +128,7 @@ def PageDumpReader(_, path: str, max_lines: Optional[int] = None):
     See the schema at https://www.mediawiki.org/wiki/Manual:Page_table
 
     TODO: consider filtering redirects, talk pages, etc. here.
+    TODO: verify schema.
 
     Args:
         path: local or GCS, compressed or uncompressed.
