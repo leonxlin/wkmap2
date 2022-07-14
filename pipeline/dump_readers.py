@@ -2,13 +2,14 @@
 
 import re
 from itertools import islice
-from typing import Optional, NamedTuple
+from typing import Optional, NamedTuple, List
+import json
 
 import apache_beam as beam
 from smart_open import open as smart_open, register_compressor
 
-def smart_line_reader(path: str, max_lines: Optional[int] = None):
-    with smart_open(path, 'rb') as f:
+def smart_line_reader(path: str, max_lines: Optional[int] = None, mode='rb'):
+    with smart_open(path, mode) as f:
         for i, line in enumerate(f):
             yield line
             if max_lines and (i >= max_lines):
@@ -67,7 +68,7 @@ def CategorylinksDumpReader(_, path: str, max_lines: Optional[int] = None):
         path: local or GCS, compressed or uncompressed.
         max_lines: number of lines to truncate at, if present.
     """
-    lines = _ | 'ReadCategorylinksDumpFile' >> beam.Create(
+    lines = _ | 'ReadCategorylinksDump' >> beam.Create(
             smart_line_reader(path, max_lines))
 
     return lines | 'ParseCategorylinksDumpLine' >> beam.FlatMap(
@@ -134,9 +135,61 @@ def PageDumpReader(_, path: str, max_lines: Optional[int] = None):
         path: local or GCS, compressed or uncompressed.
         max_lines: number of lines to truncate at, if present.
     """
-    lines = _ | 'ReadPageDumpFile' >> beam.Create(
+    lines = _ | 'ReadPageDump' >> beam.Create(
             smart_line_reader(path, max_lines))
 
     return lines | 'ParsePageDumpLine' >> beam.FlatMap(
             _parse_page_line)
 
+
+
+class Entity(NamedTuple):
+    """Info extracted about a Wikidata entity."""
+
+    qid: str
+
+    # enwiki sitelink title.
+    title: Optional[str]
+
+    # Number of sitelinks.
+    sitelinks: int
+
+    # English aliases.
+    aliases: List[str]
+
+
+
+def _parse_wikidata_json_line(line: str):
+    line = line.strip()
+    if line.endswith(','):
+        line = line[:-1]
+    if line in ('[', ']'):
+        return
+
+    obj = json.loads(line)
+    yield Entity(
+        qid=obj['id'],
+        sitelinks=len(obj['sitelinks']),
+        title=obj['labels'].get('en')['value'],
+        aliases=[d['value'] for d in obj['aliases'].get('en', [])],
+    )
+
+
+@beam.ptransform_fn
+def WikidataJsonDumpReader(_, path: str, max_lines: Optional[int] = None):
+    """Reader for Wikidata JSON dump files.
+
+    Returns a PCollection of Entity objects.
+    
+    See https://www.wikidata.org/wiki/Wikidata:Database_download
+    and https://doc.wikimedia.org/Wikibase/master/php/md_docs_topics_json.html.
+
+    Args:
+        path: local or GCS, compressed or uncompressed.
+        max_lines: number of lines to truncate at, if present.
+    """
+    lines = _ | 'ReadWikidataJsonDump' >> beam.Create(
+            smart_line_reader(path, max_lines, mode='r'))
+
+    return lines | 'ParseWikidataJsonDumpLine' >> beam.FlatMap(
+            _parse_wikidata_json_line)

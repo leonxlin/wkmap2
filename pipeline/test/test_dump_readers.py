@@ -19,6 +19,7 @@ class DumpReaderTest(unittest.TestCase):
               output,
               equal_to([45749]))
 
+
     def test_page(self):
         with TestPipeline() as p:
             items = p | PageDumpReader(
@@ -29,4 +30,16 @@ class DumpReaderTest(unittest.TestCase):
             assert_that(
               output,
               equal_to([44660]))
+
+
+    def test_wikidata(self):
+        with TestPipeline() as p:
+            items = p | WikidataJsonDumpReader(
+                    'pipeline/testdata/wikidata-20220704-all-50lines.json')
+
+            output = items | beam.combiners.Count.Globally()
+
+            assert_that(
+              output,
+              equal_to([49]))
 
