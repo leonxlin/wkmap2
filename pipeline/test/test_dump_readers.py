@@ -56,6 +56,18 @@ class DumpReaderTest(unittest.TestCase):
               equal_to([999]))
 
 
+    def test_wikipedia2vec(self):
+        with TestPipeline() as p:
+            items = p | Wikipedia2VecDumpReader(
+                    'pipeline/testdata/wikipedia2vec_enwiki_20180420_300d-50lines.txt')
+
+            output = items | beam.combiners.Count.Globally()
+
+            assert_that(
+              output,
+              equal_to([49]))
+
+
     def test_header_mismatch(self):
         with self.assertRaises(UnexpectedHeaderError):
             with TestPipeline() as p:

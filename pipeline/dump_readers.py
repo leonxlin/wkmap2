@@ -285,3 +285,52 @@ def QRankDumpReader(_, path: str, max_lines: Optional[int] = None):
     return lines | 'ParseQRankDumpLine' >> beam.FlatMap(
             _parse_qrank_line)
 
+
+
+class Wikipedia2VecEntry(NamedTuple):
+    name: str
+
+    # Each entry is either for an entity or a word.
+    is_entity: bool
+
+    vector: List[float]
+
+
+@beam.ptransform_fn
+def Wikipedia2VecDumpReader(
+    _, path: str, max_lines: Optional[int] = None, 
+    format='word2vec'):
+    """Reader for Wikipedia2Vec embedding files.
+
+    Currently only the word2vec format is supported.
+
+    See https://wikipedia2vec.github.io/wikipedia2vec/pretrained/
+    and https://wikipedia2vec.github.io/wikipedia2vec/commands/#saving-embeddings-in-text-format
+
+    Args:
+        path: local or GCS, compressed or uncompressed.
+        max_lines: number of lines to truncate at, if present.
+    """
+    lines = _line_reader(path, max_lines, mode='r')
+    entries, dim = map(int, next(lines).strip().split(' '))
+
+    def _parse(line: str):
+        tokens = line.strip().split(' ')
+        assert len(tokens) == dim + 1
+
+        is_entity = False
+        name = tokens[0]
+        if tokens[0].startswith('ENTITY/'):
+            is_entity = True
+            name = tokens[7:]
+        
+        return Wikipedia2VecEntry(
+            name=name,
+            is_entity=is_entity,
+            vector=map(float, tokens[1:]),
+        )
+
+    return (_ | "ReadWikipedia2VecDump" 
+        >> beam.Create(_parse(line) for line in lines if line.strip()))
+
+
