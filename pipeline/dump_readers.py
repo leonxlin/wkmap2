@@ -160,6 +160,12 @@ class Entity(NamedTuple):
 
 
 def _parse_wikidata_json_line(line: str):
+    # The JSON dumps look like
+    # [
+    # {...},
+    # {...},
+    # ...
+    # ]
     line = line.strip()
     if line.endswith(','):
         line = line[:-1]
