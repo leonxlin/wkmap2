@@ -297,6 +297,8 @@ def Wikipedia2VecDumpReader(
     format='word2vec'):
     """Reader for Wikipedia2Vec embedding files.
 
+    Returns a PCollection of Wikipedia2VecEntry objects.
+
     Currently only the word2vec format is supported.
 
     See https://wikipedia2vec.github.io/wikipedia2vec/pretrained/
