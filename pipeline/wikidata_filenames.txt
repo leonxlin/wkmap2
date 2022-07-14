@@ -1,1 +1,1 @@
-wikidata-20220704-all.json.bz2
+wikidata-20220704-all.json.gz
