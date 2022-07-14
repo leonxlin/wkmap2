@@ -8,7 +8,10 @@ import json
 import apache_beam as beam
 from smart_open import open as smart_open, register_compressor
 
+
 def smart_line_reader(path: str, max_lines: Optional[int] = None, mode='rb'):
+    """Generator for lines from a compressed or uncompressed file,
+    local or GCS. Truncates at `max_lines` if given."""
     with smart_open(path, mode) as f:
         for i, line in enumerate(f):
             yield line
@@ -199,3 +202,40 @@ def WikidataJsonDumpReader(_, path: str, max_lines: Optional[int] = None):
 
     return lines | 'ParseWikidataJsonDumpLine' >> beam.FlatMap(
             _parse_wikidata_json_line)
+
+
+class QRankEntry(NamedTuple):
+    qid: str
+    qrank: int
+
+
+def _parse_qrank_line(line: str):
+    line = line.strip()
+    if line == 'Entity,QRank':
+        return
+
+    qid, _qrank = line.split(',')
+    yield QRankEntry(
+        qid=qid,
+        qrank=int(_qrank),
+    )
+
+
+@beam.ptransform_fn
+def QRankDumpReader(_, path: str, max_lines: Optional[int] = None):
+    """Reader for QRank files.
+
+    Returns a PCollection of QRankEntry objects.
+    
+    See https://qrank.wmcloud.org/.
+
+    Args:
+        path: local or GCS, compressed or uncompressed.
+        max_lines: number of lines to truncate at, if present.
+    """
+    lines = _ | 'ReadQRankDump' >> beam.Create(
+            smart_line_reader(path, max_lines, mode='r'))
+
+    return lines | 'ParseQRankDumpLine' >> beam.FlatMap(
+            _parse_qrank_line)
+

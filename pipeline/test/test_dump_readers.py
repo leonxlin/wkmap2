@@ -43,3 +43,16 @@ class DumpReaderTest(unittest.TestCase):
               output,
               equal_to([49]))
 
+
+    def test_qrank(self):
+        with TestPipeline() as p:
+            items = p | QRankDumpReader(
+                    'pipeline/testdata/qrank-1000lines.csv')
+
+            output = items | beam.combiners.Count.Globally()
+
+            assert_that(
+              output,
+              equal_to([999]))
+
+
