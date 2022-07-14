@@ -2,24 +2,70 @@
 
 import re
 from itertools import islice
-from typing import Optional, NamedTuple, List
+from typing import Optional, NamedTuple, List, Union
 import json
 
 import apache_beam as beam
 from smart_open import open as smart_open, register_compressor
 
+def _verify_header_line(
+    template: Union[str, bytes],
+    actual: Union[str, bytes],
+    escape='<<???>>'):
+    """Returns a truthy value if `actual` matches template`.
 
-def smart_line_reader(path: str, max_lines: Optional[int] = None, mode='rb'):
-    """Generator for lines from a compressed or uncompressed file,
-    local or GCS. Truncates at `max_lines` if given."""
+    Inputs are stripped before comparison. Occurrences of the `escape` string in
+    `template` will match any substring.
+    """
+    assert type(template) == type(actual)
+    if type(template) == str:
+        wildcard = '.*'
+    else:
+        assert type(template) == bytes
+        if type(escape) == str:
+            escape = escape.encode()
+        wildcard = b'.*'
+
+    actual = actual.strip()
+    template = template.strip()
+    template = wildcard.join(re.escape(chunk) for chunk in template.split(escape))
+    return re.fullmatch(template, actual)
+
+
+class UnexpectedHeaderError(Exception):
+    pass
+
+def _line_reader(
+    path: str, 
+    max_lines: Optional[int] = None,
+    mode='rb',
+    expected_header: str = None):
+    """Generator for lines from a compressed or uncompressed file, local or GCS.
+
+    Args:
+        max_lines: Maximum number of lines to read, if given.
+        expected_header: path to local file containing header template.
+    """
+    header_lines = []
+    if expected_header:
+        with open(expected_header, mode=mode) as f:
+            header_lines = f.readlines()
+
     with smart_open(path, mode) as f:
+        for i, template in enumerate(header_lines):
+            if not _verify_header_line(header_lines[i], f.readline()):
+                raise UnexpectedHeaderError(
+                    f'The first lines of {path} did not match template '
+                    f'{expected_header} at line {i}. Please check whether the '
+                    f'file format or schema has changed.')
+
         for i, line in enumerate(f):
             yield line
             if max_lines and (i >= max_lines):
                 return
 
-INSERT_PATTERN=re.compile(rb'INSERT INTO `.*` VALUES')
 
+INSERT_PATTERN=re.compile(rb'INSERT INTO `.*` VALUES')
 
 # Based on the schema at 
 # https://www.mediawiki.org/wiki/Manual:Categorylinks_table
@@ -59,9 +105,8 @@ def CategorylinksDumpReader(_, path: str, max_lines: Optional[int] = None):
 
     Returns a PCollection of Categorylink objects.
 
-    The implementation is hacky: it processes the dump file directly in Python
-    and assumes the schema / dumpfile format will not change. This avoids the 
-    time-consuming step of restoring the MySQL database.
+    The implementation is hacky: it processes the dump file directly in Python.
+    This avoids the time-consuming step of restoring the MySQL database.
 
     See the schema at https://www.mediawiki.org/wiki/Manual:Categorylinks_table
 
@@ -71,8 +116,9 @@ def CategorylinksDumpReader(_, path: str, max_lines: Optional[int] = None):
         path: local or GCS, compressed or uncompressed.
         max_lines: number of lines to truncate at, if present.
     """
-    lines = _ | 'ReadCategorylinksDump' >> beam.Create(
-            smart_line_reader(path, max_lines))
+    lines = _ | 'ReadCategorylinksDump' >> beam.Create(_line_reader(
+        path, max_lines,
+        expected_header='pipeline/dump_headers/categorylinks.sql.template'))
 
     return lines | 'ParseCategorylinksDumpLine' >> beam.FlatMap(
             _parse_categorylinks_line)
@@ -125,21 +171,20 @@ def PageDumpReader(_, path: str, max_lines: Optional[int] = None):
 
     Returns a PCollection of Page objects.
 
-    The implementation is hacky: it processes the dump file directly in Python
-    and assumes the schema / dumpfile format will not change. This avoids the
-    time-consuming step of restoring the MySQL database.
+    The implementation is hacky: it processes the dump file directly in Python.
+    This avoids the time-consuming step of restoring the MySQL database.
 
     See the schema at https://www.mediawiki.org/wiki/Manual:Page_table
 
     TODO: consider filtering redirects, talk pages, etc. here.
-    TODO: verify schema.
 
     Args:
         path: local or GCS, compressed or uncompressed.
         max_lines: number of lines to truncate at, if present.
     """
-    lines = _ | 'ReadPageDump' >> beam.Create(
-            smart_line_reader(path, max_lines))
+    lines = _ | 'ReadPageDump' >> beam.Create(_line_reader(
+        path, max_lines, 
+        expected_header='pipeline/dump_headers/page.sql.template'))
 
     return lines | 'ParsePageDumpLine' >> beam.FlatMap(
             _parse_page_line)
@@ -198,7 +243,7 @@ def WikidataJsonDumpReader(_, path: str, max_lines: Optional[int] = None):
         max_lines: number of lines to truncate at, if present.
     """
     lines = _ | 'ReadWikidataJsonDump' >> beam.Create(
-            smart_line_reader(path, max_lines, mode='r'))
+            _line_reader(path, max_lines, mode='r'))
 
     return lines | 'ParseWikidataJsonDumpLine' >> beam.FlatMap(
             _parse_wikidata_json_line)
@@ -233,8 +278,9 @@ def QRankDumpReader(_, path: str, max_lines: Optional[int] = None):
         path: local or GCS, compressed or uncompressed.
         max_lines: number of lines to truncate at, if present.
     """
-    lines = _ | 'ReadQRankDump' >> beam.Create(
-            smart_line_reader(path, max_lines, mode='r'))
+    lines = _ | 'ReadQRankDump' >> beam.Create(_line_reader(
+        path, max_lines, mode='r', 
+        expected_header='pipeline/dump_headers/qrank.csv.template'))
 
     return lines | 'ParseQRankDumpLine' >> beam.FlatMap(
             _parse_qrank_line)

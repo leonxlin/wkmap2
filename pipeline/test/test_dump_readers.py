@@ -56,3 +56,12 @@ class DumpReaderTest(unittest.TestCase):
               equal_to([999]))
 
 
+    def test_header_mismatch(self):
+        with self.assertRaises(UnexpectedHeaderError):
+            with TestPipeline() as p:
+                items = p | PageDumpReader(
+                        'pipeline/testdata/page-changed-schema.sql')
+
+                output = items | beam.combiners.Count.Globally()
+
+
