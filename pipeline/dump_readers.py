@@ -272,7 +272,7 @@ def QRankDumpReader(_, path: str, max_lines: Optional[int] = None):
 
     def _parse(line):
         qid, _qrank = line.strip().split(',')
-        yield QRankEntry(
+        return QRankEntry(
             qid=qid,
             qrank=int(_qrank),
         )
