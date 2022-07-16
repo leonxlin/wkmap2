@@ -27,10 +27,23 @@ def run(p):
 
 
 def run2(p):
-	squares = p | 'MakeSquares' >> beam.Create([((1, 1), 1), ((3, 3), 9), ((2, 2), 4), ((8, 8), 64)])
-	num_names = p | 'MakeNumNames' >> beam.Create([((1, 1), 'one'), ((3, 3), 'three'), ((2, 2), 'two'), ((8, 8), 'eight')])
-	squares_by_num_name = categorization.ReKey('ReKey', squares, num_names)
-	squares_by_num_name | beam.Map(print)
+	categorylinks = (p 
+		| 'read catlinks' 
+		>> beam.Create(dump_readers.CategorylinksDumpReader(
+			'data/enwiki-20220701-categorylinks.sql', max_lines=100)))
+	pages = (p 
+		| 'read pages' 
+		>> beam.Create(dump_readers.PageDumpReader(
+			'data/enwiki-20220701-page.sql', max_lines=100)))
+	entities = (p 
+		| 'read entities' 
+		>> beam.Create(dump_readers.WikidataJsonDumpReader(
+			'data/wikidata-20220704-all.json.gz', max_lines=100000)))
+
+	cat_qid_to_member_qid = categorization.ConvertCategorylinksToQids(
+		categorylinks, pages, entities)
+
+	cat_qid_to_member_qid | 'write' >> WriteToText('/tmp/process.txt')
 
 
 
@@ -72,4 +85,4 @@ def run3(p):
 
 if __name__ == '__main__':
 	with beam.Pipeline() as p:
-		run(p)
+		run2(p)
