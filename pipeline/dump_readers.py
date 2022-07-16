@@ -144,9 +144,11 @@ PAGE_ROW_PATTERN=re.compile(
 
 class Page(NamedTuple):
     page_id: int
-    namespace: int
     title: str
-    is_redirect: bool
+
+    # See https://www.mediawiki.org/wiki/Manual:Namespace.
+    namespace: int = 0
+    is_redirect: bool = False
 
 
 def _parse_page_line(line: bytes):
@@ -155,8 +157,8 @@ def _parse_page_line(line: bytes):
     for match in re.finditer(PAGE_ROW_PATTERN, line):
         yield Page(
                 page_id=int(match.group('page_id')),
-                namespace=int(match.group('page_namespace')),
                 title=match.group('page_title').decode('utf-8'),
+                namespace=int(match.group('page_namespace')),
                 is_redirect=bool(int(match.group('page_is_redirect'))),
               )
 
@@ -193,16 +195,16 @@ class Entity(NamedTuple):
     qid: str
 
     # enwiki sitelink title.
-    title: Optional[str]
+    title: Optional[str] = None
 
     # English label.
-    label: Optional[str]
+    label: Optional[str] = None
 
     # Number of sitelinks.
-    sitelinks: int
+    sitelinks: int = 0
 
     # English aliases.
-    aliases: List[str]
+    aliases: Optional[List[str]] = None
 
 
 
