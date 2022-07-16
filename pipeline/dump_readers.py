@@ -195,6 +195,9 @@ class Entity(NamedTuple):
     # enwiki sitelink title.
     title: Optional[str]
 
+    # English label.
+    label: Optional[str]
+
     # Number of sitelinks.
     sitelinks: int
 
@@ -220,7 +223,8 @@ def _parse_wikidata_json_line(line: str):
     yield Entity(
         qid=obj['id'],
         sitelinks=len(obj['sitelinks']),
-        title=obj['labels'].get('en')['value'],
+        title=obj['sitelinks'].get('enwiki', {}).get('title'),
+        label=obj['labels'].get('en', {}).get('value'),
         aliases=[d['value'] for d in obj['aliases'].get('en', [])],
     )
 
