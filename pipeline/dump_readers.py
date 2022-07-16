@@ -1,11 +1,10 @@
-"""Beam transforms for reading from various dump files."""
+"""Simple readers for various Wikipedia/Wikidata-related dump files."""
 
 import re
 from itertools import islice
 from typing import Optional, NamedTuple, List, Union
 import json
 
-import apache_beam as beam
 from smart_open import open as smart_open, register_compressor
 
 def _verify_header_line(
@@ -99,29 +98,26 @@ def _parse_categorylinks_line(line: bytes):
               )
 
 
-@beam.ptransform_fn
-def CategorylinksDumpReader(_, path: str, max_lines: Optional[int] = None):
+def CategorylinksDumpReader(path: str, max_lines: Optional[int] = None):
     """Reader for MediaWiki `categorylinks` table MySQL dump files.
 
-    Returns a PCollection of Categorylink objects.
+    Generates Categorylink objects.
 
     The implementation is hacky: it processes the dump file directly in Python.
     This avoids the time-consuming step of restoring the MySQL database.
 
     See the schema at https://www.mediawiki.org/wiki/Manual:Categorylinks_table
 
-    TODO: verify schema.
-
     Args:
         path: local or GCS, compressed or uncompressed.
         max_lines: number of lines to truncate at, if present.
     """
-    lines = _ | 'ReadCategorylinksDump' >> beam.Create(_line_reader(
+    lines = _line_reader(
         path, max_lines,
-        expected_header='pipeline/dump_headers/categorylinks.sql.template'))
-
-    return lines | 'ParseCategorylinksDumpLine' >> beam.FlatMap(
-            _parse_categorylinks_line)
+        expected_header='pipeline/dump_headers/categorylinks.sql.template')
+    for line in lines:
+        for link in _parse_categorylinks_line(line):
+            yield link
 
 
 # Based on the schema at 
@@ -165,11 +161,10 @@ def _parse_page_line(line: bytes):
               )
 
 
-@beam.ptransform_fn
-def PageDumpReader(_, path: str, max_lines: Optional[int] = None):
+def PageDumpReader(path: str, max_lines: Optional[int] = None):
     """Reader for MediaWiki `page` table MySQL dump files.
 
-    Returns a PCollection of Page objects.
+    Generates Page objects.
 
     The implementation is hacky: it processes the dump file directly in Python.
     This avoids the time-consuming step of restoring the MySQL database.
@@ -182,12 +177,13 @@ def PageDumpReader(_, path: str, max_lines: Optional[int] = None):
         path: local or GCS, compressed or uncompressed.
         max_lines: number of lines to truncate at, if present.
     """
-    lines = _ | 'ReadPageDump' >> beam.Create(_line_reader(
+    lines = _line_reader(
         path, max_lines, 
-        expected_header='pipeline/dump_headers/page.sql.template'))
+        expected_header='pipeline/dump_headers/page.sql.template')
 
-    return lines | 'ParsePageDumpLine' >> beam.FlatMap(
-            _parse_page_line)
+    for line in lines:
+        for page in _parse_page_line(line):
+            yield page
 
 
 
@@ -229,11 +225,10 @@ def _parse_wikidata_json_line(line: str):
     )
 
 
-@beam.ptransform_fn
-def WikidataJsonDumpReader(_, path: str, max_lines: Optional[int] = None):
+def WikidataJsonDumpReader(path: str, max_lines: Optional[int] = None):
     """Reader for Wikidata JSON dump files.
 
-    Returns a PCollection of Entity objects.
+    Generates Entity objects.
     
     See https://www.wikidata.org/wiki/Wikidata:Database_download
     and https://doc.wikimedia.org/Wikibase/master/php/md_docs_topics_json.html.
@@ -242,11 +237,9 @@ def WikidataJsonDumpReader(_, path: str, max_lines: Optional[int] = None):
         path: local or GCS, compressed or uncompressed.
         max_lines: number of lines to truncate at, if present.
     """
-    lines = _ | 'ReadWikidataJsonDump' >> beam.Create(
-            _line_reader(path, max_lines, mode='r'))
-
-    return lines | 'ParseWikidataJsonDumpLine' >> beam.FlatMap(
-            _parse_wikidata_json_line)
+    for line in _line_reader(path, max_lines, mode='r'):
+        for entity in _parse_wikidata_json_line(line):
+            yield entity
 
 
 class QRankEntry(NamedTuple):
@@ -254,11 +247,10 @@ class QRankEntry(NamedTuple):
     qrank: int
 
 
-@beam.ptransform_fn
-def QRankDumpReader(_, path: str, max_lines: Optional[int] = None):
+def QRankDumpReader(path: str, max_lines: Optional[int] = None):
     """Reader for QRank files.
 
-    Returns a PCollection of QRankEntry objects.
+    Generates QRankEntry objects.
     
     See https://qrank.wmcloud.org/.
 
@@ -271,15 +263,18 @@ def QRankDumpReader(_, path: str, max_lines: Optional[int] = None):
         expected_header='pipeline/dump_headers/qrank.csv.template')
 
     def _parse(line):
-        qid, _qrank = line.strip().split(',')
-        return QRankEntry(
+        line = line.strip()
+        if not line:
+            return
+        qid, _qrank = line.split(',')
+        yield QRankEntry(
             qid=qid,
             qrank=int(_qrank),
         )
 
-    return (_ | "ReadQRankDump"
-        >> beam.Create(_parse(line) for line in lines if line.strip()))
-
+    for line in lines:
+        for entry in _parse(line):
+            yield entry
 
 
 class Wikipedia2VecEntry(NamedTuple):
@@ -291,9 +286,8 @@ class Wikipedia2VecEntry(NamedTuple):
     vector: List[float]
 
 
-@beam.ptransform_fn
 def Wikipedia2VecDumpReader(
-    _, path: str, max_lines: Optional[int] = None, 
+    path: str, max_lines: Optional[int] = None, 
     format='word2vec'):
     """Reader for Wikipedia2Vec embedding files.
 
@@ -312,7 +306,11 @@ def Wikipedia2VecDumpReader(
     entries, dim = map(int, next(lines).strip().split(' '))
 
     def _parse(line: str):
-        tokens = line.strip().split(' ')
+        line = line.strip()
+        if not line:
+            return
+
+        tokens = line.split(' ')
         assert len(tokens) == dim + 1
 
         is_entity = False
@@ -321,13 +319,14 @@ def Wikipedia2VecDumpReader(
             is_entity = True
             name = tokens[7:]
         
-        return Wikipedia2VecEntry(
+        yield Wikipedia2VecEntry(
             name=name,
             is_entity=is_entity,
             vector=map(float, tokens[1:]),
         )
 
-    return (_ | "ReadWikipedia2VecDump" 
-        >> beam.Create(_parse(line) for line in lines if line.strip()))
+    for line in lines:
+        for entry in _parse(line):
+            yield entry
 
 
