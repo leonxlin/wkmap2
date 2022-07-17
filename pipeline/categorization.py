@@ -1,10 +1,13 @@
 """Transforms for processing categories."""
 
+from typing import NamedTuple, List, Tuple, TypeVar
+
 import apache_beam as beam
-from typing import NamedTuple, List
 from apache_beam.io import WriteToText
+from apache_beam.pvalue import PCollection
 
 from pipeline.dump_readers import Entity, Page, Categorylink
+
 
 class TitleAndIsCat(NamedTuple):
     title: str
@@ -13,16 +16,26 @@ class TitleAndIsCat(NamedTuple):
 # See https://www.mediawiki.org/wiki/Manual:Namespace.
 _CATEGORY_NAMESPACE = 14
 
-def ReKey(stage_name, a_to_b, a_to_c):
+
+K1 = TypeVar('K1')
+K2 = TypeVar('K2')
+V = TypeVar('V')
+
+def ReKey(
+    stage_name: str, 
+    k1_to_v: PCollection[Tuple[K1, V]],
+    k1_to_k2: PCollection[Tuple[K1, K2]]
+    ) -> PCollection[Tuple[K2, V]]:
+
     sources = {
-        'b': a_to_b,
-        'c': a_to_c,
+        'v': k1_to_v,
+        'k2': k1_to_k2,
     }
     def _process_join(join_item):
-        a, dic = join_item
-        for b in dic['b']:
-            for c in dic['c']:
-                yield c, b
+        k1, dic = join_item
+        for v in dic['v']:
+            for k2 in dic['k2']:
+                yield k2, v
 
     return (sources 
         | stage_name + '/Join' >> beam.CoGroupByKey() 
@@ -33,31 +46,37 @@ def _swap_pair(pair):
     return pair[1], pair[0]
 
 
-def ConvertCategorylinksToQids(categorylinks, pages, entities):
-    def _qids_by_title(e: Entity):
+def ConvertCategorylinksToQids(
+    categorylinks: PCollection[Categorylink], 
+    pages: PCollection[Page], 
+    entities: PCollection[Entity],
+    write_intermediates=False
+    ) -> PCollection[Tuple[str, str]]:
+
+    def _title_to_qid(e: Entity):
         if not e.title:
             return
         if e.title.startswith('Category:'):
             yield TitleAndIsCat(e.title[9:], True), e.qid
         else:
             yield TitleAndIsCat(e.title, False), e.qid
-    qids_by_title = entities | 'GetQidsByTitle' >> beam.FlatMap(_qids_by_title)
+    title_to_qid = entities | 'GetTitleToQid' >> beam.FlatMap(_title_to_qid)
 
-
-    def _page_ids_by_title(p: Page):
+    def _title_to_page_id(p: Page):
         return TitleAndIsCat(p.title, p.namespace == _CATEGORY_NAMESPACE), p.page_id
-    page_ids_by_title = pages | 'GetPageIdsByTitle' >> beam.Map(_page_ids_by_title)
+    title_to_page_id = pages | 'GetTitleToPageId' >> beam.Map(_title_to_page_id)
 
+    page_id_to_qid = ReKey('GetPageIdToQid', title_to_qid, title_to_page_id)
+    
+    page_id_to_cat_title = (categorylinks 
+        | 'GetPageIdToCatTitle' 
+        >> beam.Map(lambda cl: (cl.page_id, TitleAndIsCat(cl.category, True))))
 
-    qids_by_page_id = ReKey('GetQidsByPageId', qids_by_title, page_ids_by_title)
+    qid_to_cat_title = ReKey('GetQidToCatTitle', page_id_to_cat_title, page_id_to_qid)
+    cat_title_to_qid = qid_to_cat_title | 'GetCatTitleToQid' >> beam.Map(_swap_pair)
 
-    cat_titles_by_page_id = categorylinks | 'GetCatTitlesByPageId' >> beam.Map(lambda cl: (cl.page_id, TitleAndIsCat(cl.category, True)))
+    if write_intermediates:
+        cat_title_to_qid | 'WriteCatTitleToQid' >> WriteToText('/tmp/cat_title_to_qid.txt')
+        title_to_qid | 'WriteTitleToQid' >> WriteToText('/tmp/title_to_qid.txt')
 
-    cat_titles_by_member_qid = ReKey('GetCatTitlesByMemberQid', cat_titles_by_page_id, qids_by_page_id)
-    member_qid_by_cat_title = cat_titles_by_member_qid | 'GetMemberQidByCatTitle' >> beam.Map(_swap_pair)
-
-    member_qid_by_cat_title | 'WriteMemberQidByCatTitle' >> WriteToText('/tmp/member_qid_by_cat_title.txt')
-    qids_by_title | 'WriteQidsByTitle' >> WriteToText('/tmp/qids_by_title.txt')
-
-    member_qid_by_cat_qid = ReKey('GetMemberQidByCatQid', member_qid_by_cat_title, qids_by_title)
-    return member_qid_by_cat_qid
+    return ReKey('GetCatQidToQid', cat_title_to_qid, title_to_qid)
