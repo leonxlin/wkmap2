@@ -1,8 +1,13 @@
+"""Example invocation:
+
+python3 -m pipeline.process
+"""
 
 import apache_beam as beam
 from apache_beam.io import WriteToText
-import dump_readers as dump_readers
-import categorization as categorization
+
+import pipeline.dump_readers as dump_readers
+import pipeline.categorization as categorization
 
 
 def run(p):
@@ -85,4 +90,4 @@ def run3(p):
 
 if __name__ == '__main__':
 	with beam.Pipeline() as p:
-		run2(p)
+		run3(p)

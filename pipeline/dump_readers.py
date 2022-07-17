@@ -2,27 +2,24 @@
 
 import re
 from itertools import islice
-from typing import Optional, NamedTuple, List, Union
+from typing import Optional, NamedTuple, List, Union, AnyStr
 import json
 
 from smart_open import open as smart_open, register_compressor
 
 def _verify_header_line(
-    template: Union[str, bytes],
-    actual: Union[str, bytes],
-    escape='<<???>>'):
+    template: AnyStr,
+    actual: AnyStr):
     """Returns a truthy value if `actual` matches template`.
 
     Inputs are stripped before comparison. Occurrences of the `escape` string in
     `template` will match any substring.
     """
-    assert type(template) == type(actual)
-    if type(template) == str:
-        wildcard = '.*'
+    if isinstance(template, str):
+        escape: AnyStr = '<<???>>'
+        wildcard: AnyStr = '.*'
     else:
-        assert type(template) == bytes
-        if type(escape) == str:
-            escape = escape.encode()
+        escape = b'<<???>>'
         wildcard = b'.*'
 
     actual = actual.strip()
@@ -321,14 +318,14 @@ def Wikipedia2VecDumpReader(
 
         is_entity = False
         name = tokens[0]
-        if tokens[0].startswith('ENTITY/'):
+        if name.startswith('ENTITY/'):
             is_entity = True
-            name = tokens[7:]
+            name = name[7:]
         
         yield Wikipedia2VecEntry(
             name=name,
             is_entity=is_entity,
-            vector=map(float, tokens[1:]),
+            vector=[float(t) for t in tokens[1:]],
         )
 
     for line in lines:

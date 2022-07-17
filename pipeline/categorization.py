@@ -1,10 +1,11 @@
 """Transforms for processing categories."""
 
 import apache_beam as beam
-from dump_readers import Entity, Page, Categorylink
 from typing import NamedTuple, List
-
 from apache_beam.io import WriteToText
+
+
+from pipeline.dump_readers import Entity, Page, Categorylink
 
 class TitleAndIsCat(NamedTuple):
     title: str

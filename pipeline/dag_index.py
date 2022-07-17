@@ -1,8 +1,9 @@
 """Beam transforms for indexing the top-scoring N descendants of a DAG node."""
 
 import apache_beam as beam
+from apache_beam.pvalue import PCollection
 
-from typing import NamedTuple, List, Set
+from typing import NamedTuple, List, Set, Tuple, Iterable
 
 
 LeafId = str
@@ -34,11 +35,15 @@ class Node(NamedTuple):
 	parents: Set[NodeId]
 
 
-def _sorted_and_truncated(leaves, N):
+def _sorted_and_truncated(leaves: Iterable[Leaf], N: int):
 	return sorted(set(leaves), key=lambda leaf: -leaf.score)[:N]
 
 
-def CreateNodes(leaves, leaf_parent_links, node_links, N=10000):
+def CreateNodes(
+	leaves: PCollection[Leaf],
+	leaf_parent_links: PCollection[LeafParentLink],
+	node_links: PCollection[NodeLink], 
+	N=10000) -> PCollection[Node]:
 
 	leaf_info = {
 		'scores': leaves | beam.Map(lambda l: (l.leaf_id, l.score)),
@@ -84,7 +89,11 @@ def CreateNodes(leaves, leaf_parent_links, node_links, N=10000):
 	return nodes
 
 
-def CreateIndex(leaves, leaf_parent_links, node_links, iters=10, N=10000):
+def CreateIndex(
+	leaves: PCollection[Leaf],
+	leaf_parent_links: PCollection[LeafParentLink],
+	node_links: PCollection[NodeLink], 
+	iters=10, N=10000):
 	nodes = CreateNodes(leaves, leaf_parent_links, node_links, N)
 
 	# Split nodes based on whether they are ready to propagate leaves upward.
@@ -102,14 +111,17 @@ def CreateIndex(leaves, leaf_parent_links, node_links, iters=10, N=10000):
 
 class _SplitReadyNodes(beam.DoFn):	
 	"""Separates nodes based on whether they are ready to propagate their leaves upward."""
-	def process(self, node):
+	def process(self, node: Node):
 		if node.unprocessed_children:
 			yield beam.pvalue.TaggedOutput('pending', node)
 		else:
 			yield beam.pvalue.TaggedOutput('ready', node)
 
 
-def _PropagateLeavesOnce(giving_nodes, receiving_nodes, stage_name: str = "", N=10000):
+def _PropagateLeavesOnce(
+	giving_nodes: PCollection[Node], 
+	receiving_nodes: PCollection[Node], 
+	stage_name: str = "", N=10000) -> Tuple[PCollection[Node], PCollection[Node]]:
 
 	def _generate_parent_child_pairs(node: Node):
 		for parent in node.parents:
