@@ -3,6 +3,7 @@
 from typing import NamedTuple, List, Tuple, TypeVar
 
 import apache_beam as beam
+from apache_beam.metrics import Metrics
 from apache_beam.io import WriteToText
 from apache_beam.pvalue import PCollection
 
@@ -33,6 +34,10 @@ def ReKey(
     }
     def _process_join(join_item):
         k1, dic = join_item
+
+        Metrics.distribution(stage_name, 'v_per_k1').update(len(dic['v']))
+        Metrics.distribution(stage_name, 'k2_per_k1').update(len(dic['k2']))
+
         for v in dic['v']:
             for k2 in dic['k2']:
                 yield k2, v
@@ -57,8 +62,10 @@ def ConvertCategorylinksToQids(
         if not e.title:
             return
         if e.title.startswith('Category:'):
+            Metrics.counter('GetTitleToQid', 'categories').inc()
             yield TitleAndIsCat(e.title[9:], True), e.qid
         else:
+            Metrics.counter('GetTitleToQid', 'non_categories').inc()
             yield TitleAndIsCat(e.title, False), e.qid
     title_to_qid = entities | 'GetTitleToQid' >> beam.FlatMap(_title_to_qid)
 
@@ -67,7 +74,7 @@ def ConvertCategorylinksToQids(
     title_to_page_id = pages | 'GetTitleToPageId' >> beam.Map(_title_to_page_id)
 
     page_id_to_qid = ReKey('GetPageIdToQid', title_to_qid, title_to_page_id)
-    
+
     page_id_to_cat_title = (categorylinks 
         | 'GetPageIdToCatTitle' 
         >> beam.Map(lambda cl: (cl.page_id, TitleAndIsCat(cl.category, True))))

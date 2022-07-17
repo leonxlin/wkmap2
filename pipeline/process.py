@@ -5,6 +5,7 @@ python3 -m pipeline.process
 
 import apache_beam as beam
 from apache_beam.io import WriteToText
+from apache_beam.metrics import MetricsFilter
 
 import pipeline.dump_readers as dump_readers
 import pipeline.categorization as categorization
@@ -89,5 +90,7 @@ def run3(p):
 
 
 if __name__ == '__main__':
-	with beam.Pipeline() as p:
-		run3(p)
+	p = beam.Pipeline()
+	run3(p)
+	result = p.run()
+	print(result.metrics().query(MetricsFilter()))
