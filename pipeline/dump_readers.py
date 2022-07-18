@@ -10,6 +10,7 @@ import json
 import apache_beam as beam
 from apache_beam.io.textio import ReadAllFromText
 from apache_beam.transforms.ptransform import PTransform, ptransform_fn
+from apache_beam.transforms.util import Reshuffle
 
 from smart_open import open as smart_open
 
@@ -125,6 +126,7 @@ class DumpReader(PTransform, Generic[AnyStr, R], Iterable[R]):
 
         return (pipeline
             | beam.Create(self.filenames)
+            | Reshuffle()
             | ReadAllFromText(coder=coder)
             | beam.FlatMap(self.parse_line))
 
