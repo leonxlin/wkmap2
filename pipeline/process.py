@@ -62,7 +62,7 @@ def create_inputs(p, args):
 		entities = (p
 			| 'ReadEntities'
 			>> dump_readers.WikidataJsonDumpReader(
-				args.wikidata_dump, max_lines=args.max_readlines))
+				args.wikidata_dump, require_title=True, max_lines=args.max_readlines))
 	else:
 		entities = (p
 			| 'read entities'

@@ -305,11 +305,14 @@ class WikidataJsonDumpReader(DumpReader):
     """
     def __init__(self,
         pattern: str,
+        require_title=False,
         **kwargs):
         DumpReader.__init__(self,
             pattern=pattern,
             read_type=str,
             **kwargs)
+
+        self.require_title = require_title
 
     def parse_line(self, line: str) -> Iterator[Entity]:
         # The JSON dumps look like
@@ -327,13 +330,17 @@ class WikidataJsonDumpReader(DumpReader):
             return
 
         obj = json.loads(line)
-        yield Entity(
+        e = Entity(
             qid=obj['id'],
             sitelinks=len(obj['sitelinks']),
             title=obj['sitelinks'].get('enwiki', {}).get('title'),
             label=obj['labels'].get('en', {}).get('value'),
             aliases=[d['value'] for d in obj['aliases'].get('en', [])],
         )
+
+        if self.require_title and not e.title:
+            return
+        yield e
 
 
 class QRankEntry(NamedTuple):
