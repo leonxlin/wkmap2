@@ -1,11 +1,31 @@
 """Simple readers for various Wikipedia/Wikidata-related dump files."""
 
+import logging
 import re
+import glob
 from itertools import islice
 from typing import Optional, NamedTuple, List, Union, AnyStr
 import json
 
-from smart_open import open as smart_open, register_compressor
+import apache_beam as beam
+from apache_beam.io.textio import ReadAllFromText
+from apache_beam.transforms.ptransform import ptransform_fn
+
+from smart_open import open as smart_open
+
+import pipeline.gcs_glob as gcs_glob
+
+@ptransform_fn
+def GlobToLines(pipeline, pattern: str, verbose=True):
+    if gcs_glob.parse_gcs_path(pattern):
+        filenames = gcs_glob.glob(pattern)
+    else:
+        filenames = glob.glob(pattern)
+
+    logging.info(f'Found {len(filenames)} files matching {pattern}.')
+
+    return pipeline | beam.Create(filenames) | ReadAllFromText()
+
 
 def _verify_header_line(
     template: AnyStr,
