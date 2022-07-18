@@ -16,7 +16,12 @@ from smart_open import open as smart_open
 import pipeline.gcs_glob as gcs_glob
 
 @ptransform_fn
-def GlobToLines(pipeline, pattern: str, verbose=True):
+def GlobToLines(pipeline, pattern: str, verbose=True, read_bytes=False):
+    """Returns a collection of lines from files matching the given pattern.
+
+    Args:
+        pattern: glob path, local or gcs, compressed or uncompressed.
+    """
     if gcs_glob.parse_gcs_path(pattern):
         filenames = gcs_glob.glob(pattern)
     else:
@@ -24,7 +29,12 @@ def GlobToLines(pipeline, pattern: str, verbose=True):
 
     logging.info(f'Found {len(filenames)} files matching {pattern}.')
 
-    return pipeline | beam.Create(filenames) | ReadAllFromText()
+    if read_bytes:
+        coder = beam.coders.coders.BytesCoder()
+    else:
+        coder = beam.coders.coders.StrUtf8Coder()
+
+    return pipeline | beam.Create(filenames) | ReadAllFromText(coder=coder)
 
 
 def _verify_header_line(
