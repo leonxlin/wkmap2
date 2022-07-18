@@ -29,8 +29,8 @@ def create_inputs(p, args):
 	if args.categorylinks_dump:
 		categorylinks = (p
 			| 'ReadCategorylinks'
-			>> beam.Create(dump_readers.CategorylinksDumpReader(
-				args.categorylinks_dump, max_lines=args.max_readlines)))
+			>> dump_readers.CategorylinksDumpReader(
+				args.categorylinks_dump, max_lines=args.max_readlines))
 	else:
 		categorylinks = (p
 			| 'CreateCategorylinks'
@@ -44,8 +44,8 @@ def create_inputs(p, args):
 	if args.page_dump:
 		pages = (p
 			| 'ReadPages'
-			>> beam.Create(dump_readers.PageDumpReader(
-				args.page_dump, max_lines=args.max_readlines)))
+			>> dump_readers.PageDumpReader(
+				args.page_dump, max_lines=args.max_readlines))
 	else:
 		pages = (p
 			| 'CreatePages'
@@ -61,8 +61,8 @@ def create_inputs(p, args):
 	if args.wikidata_dump:
 		entities = (p
 			| 'ReadEntities'
-			>> beam.Create(dump_readers.WikidataJsonDumpReader(
-				args.wikidata_dump, max_lines=args.max_readlines)))
+			>> dump_readers.WikidataJsonDumpReader(
+				args.wikidata_dump, max_lines=args.max_readlines))
 	else:
 		entities = (p
 			| 'read entities'
