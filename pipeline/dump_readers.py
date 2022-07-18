@@ -330,12 +330,14 @@ class WikidataJsonDumpReader(DumpReader):
             return
 
         obj = json.loads(line)
+        if 'id' not in obj:
+            return
         e = Entity(
             qid=obj['id'],
-            sitelinks=len(obj['sitelinks']),
-            title=obj['sitelinks'].get('enwiki', {}).get('title'),
-            label=obj['labels'].get('en', {}).get('value'),
-            aliases=[d['value'] for d in obj['aliases'].get('en', [])],
+            sitelinks=len(obj.get('sitelinks', {})),
+            title=obj.get('sitelinks', {}).get('enwiki', {}).get('title'),
+            label=obj.get('labels', {}).get('en', {}).get('value'),
+            aliases=[d['value'] for d in obj.get('aliases', {}).get('en', [])],
         )
 
         if self.require_title and not e.title:
