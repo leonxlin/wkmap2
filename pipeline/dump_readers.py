@@ -4,37 +4,38 @@ import logging
 import re
 import glob
 from itertools import islice
-from typing import Optional, NamedTuple, List, Union, AnyStr
+from typing import Optional, NamedTuple, List, Union, AnyStr, Type, TypeVar, Iterator, Iterable, Generic
 import json
 
 import apache_beam as beam
 from apache_beam.io.textio import ReadAllFromText
-from apache_beam.transforms.ptransform import ptransform_fn
+from apache_beam.transforms.ptransform import PTransform, ptransform_fn
 
 from smart_open import open as smart_open
 
 import pipeline.gcs_glob as gcs_glob
 
+
+def local_or_gcs_glob(pattern: str) -> Iterable[str]:
+    if gcs_glob.parse_gcs_path(pattern):
+        return gcs_glob.glob(pattern)
+    return glob.glob(pattern)
+
+
 @ptransform_fn
-def GlobToLines(pipeline, pattern: str, verbose=True, read_bytes=False):
+def GlobToLines(
+    pipeline,
+    pattern: str,
+    verbose=True,
+    read_type: Type[AnyStr] = str):
     """Returns a collection of lines from files matching the given pattern.
 
     Args:
         pattern: glob path, local or gcs, compressed or uncompressed.
     """
-    if gcs_glob.parse_gcs_path(pattern):
-        filenames = gcs_glob.glob(pattern)
-    else:
-        filenames = glob.glob(pattern)
+    filenames = local_or_gcs_glob(pattern)
 
     logging.info(f'Found {len(filenames)} files matching {pattern}.')
-
-    if read_bytes:
-        coder = beam.coders.coders.BytesCoder()
-    else:
-        coder = beam.coders.coders.StrUtf8Coder()
-
-    return pipeline | beam.Create(filenames) | ReadAllFromText(coder=coder)
 
 
 def _verify_header_line(
@@ -61,42 +62,97 @@ def _verify_header_line(
 class UnexpectedHeaderError(Exception):
     pass
 
-def _line_reader(
-    path: str, 
-    max_lines: Optional[int] = None,
-    mode='rb',
-    expected_header: str = None):
-    """Generator for lines from a compressed or uncompressed file, local or GCS.
 
-    Args:
-        max_lines: Maximum number of lines to read, if given.
-        expected_header: path to local file containing header template.
-    """
+def _verify_header(expected_header_file: str, dump_file: str, mode: str):
     header_lines = []
-    if expected_header:
-        with open(expected_header, mode=mode) as f:
-            header_lines = f.readlines()
+    with open(expected_header_file, mode=mode) as f:
+        header_lines = f.readlines()
 
-    with smart_open(path, mode) as f:
+    with smart_open(dump_file, mode) as f:
         for i, template in enumerate(header_lines):
             if not _verify_header_line(header_lines[i], f.readline()):
                 raise UnexpectedHeaderError(
-                    f'The first lines of {path} did not match template '
-                    f'{expected_header} at line {i}. Please check whether the '
-                    f'file format or schema has changed.')
+                    f'The first lines of {dump_file} did not match template '
+                    f'{expected_header_file} at line {i}. Please check '
+                    f'whether the file format or schema has changed.')
 
-        for i, line in enumerate(f):
-            yield line
-            if max_lines and (i >= max_lines):
-                return
+
+class NoFilesMatchedError(Exception):
+    pass
+
+
+R = TypeVar('R')
+class DumpReader(PTransform, Generic[AnyStr, R], Iterable[R]):
+    """Reads lines from files as a PCollection or iterator."""
+
+    def __init__(self,
+        pattern: str,
+        read_type: Type[AnyStr] = str,
+        expected_header: Optional[str] = None,
+        max_lines: int = None):
+        """
+        Args:
+            pattern: glob pattern to match. Local or GCS, compressed or uncompressed.
+            read_type: str or bytes.
+            expected_header: File to match dump's initial lines against.
+            max_lines: maximum number of lines to read.
+        """
+
+        # super(DumpReader, self).__init__()
+        PTransform.__init__(self)
+        self.pattern = pattern
+        self.read_type = read_type
+        self.read_mode = 'r' if read_type is str else 'rb'
+        self.filenames = local_or_gcs_glob(pattern)
+        self.max_lines = max_lines
+
+        if not self.filenames:
+            raise NoFilesMatchedError(f'No files matched {pattern}')
+        logging.info(f'Found {len(self.filenames)} files matching {pattern}.')
+
+        if expected_header:
+            _verify_header(expected_header, self.filenames[0], self.read_mode)
+
+
+    def parse_line(self, line: AnyStr) -> Iterator[R]:
+        yield line
+
+    def expand(self, pipeline):
+        if self.read_type == bytes:
+            coder = beam.coders.coders.BytesCoder()
+        elif self.read_type == str:
+            coder = beam.coders.coders.StrUtf8Coder()
+
+        return (pipeline
+            | beam.Create(self.filenames)
+            | ReadAllFromText(coder=coder)
+            | beam.FlatMap(self.parse_line))
+
+    def __iter__(self) -> Iterator[R]:
+        """Does not skip header lines."""
+
+        def read():
+            i = 0
+            for filename in self.filenames:
+                with smart_open(filename, self.read_mode) as f:
+                    for line in f:
+                        for obj in self.parse_line(line):
+                            yield obj
+                        i += 1
+                        if self.max_lines and i >= self.max_lines:
+                            return
+
+        return read()
+
+
 
 
 INSERT_PATTERN=re.compile(rb'INSERT INTO `.*` VALUES')
 
-# Based on the schema at 
+# Based on the schema at
 # https://www.mediawiki.org/wiki/Manual:Categorylinks_table
 #
-# See unit tests for example data. 
+# See unit tests for example data.
 CATEGORYLINKS_ROW_PATTERN=re.compile(
         rb'\('
         rb'(?P<cl_from>\d+),'
@@ -115,42 +171,38 @@ class Categorylink(NamedTuple):
     category: str
 
 
-def _parse_categorylinks_line(line: bytes):
-    if not re.match(INSERT_PATTERN, line):
-        return
-    for match in re.finditer(CATEGORYLINKS_ROW_PATTERN, line):
-        yield Categorylink(
-                page_id=int(match.group('cl_from')), 
-                category=match.group('cl_to').decode('utf-8'),
-              )
-
-
-def CategorylinksDumpReader(path: str, max_lines: Optional[int] = None):
+class CategorylinksDumpReader(DumpReader):
     """Reader for MediaWiki `categorylinks` table MySQL dump files.
 
-    Generates Categorylink objects.
+    Parses lines into Categorylink objects.
 
-    The implementation is hacky: it processes the dump file directly in Python.
+    This is somewhat hacky: we process the dump file directly in Python.
     This avoids the time-consuming step of restoring the MySQL database.
 
     See the schema at https://www.mediawiki.org/wiki/Manual:Categorylinks_table
-
-    Args:
-        path: local or GCS, compressed or uncompressed.
-        max_lines: number of lines to truncate at, if present.
     """
-    lines = _line_reader(
-        path, max_lines,
-        expected_header='pipeline/dump_headers/categorylinks.sql.template')
-    for line in lines:
-        for link in _parse_categorylinks_line(line):
-            yield link
+
+    def __init__(self, pattern: str, **kwargs):
+        DumpReader.__init__(self,
+            pattern=pattern,
+            read_type=bytes,
+            expected_header='pipeline/dump_headers/categorylinks.sql.template',
+            **kwargs)
+
+    def parse_line(self, line: bytes) -> Iterator[Categorylink]:
+        if not re.match(INSERT_PATTERN, line):
+            return
+        for match in re.finditer(CATEGORYLINKS_ROW_PATTERN, line):
+            yield Categorylink(
+                    page_id=int(match.group('cl_from')),
+                    category=match.group('cl_to').decode('utf-8'),
+                  )
 
 
-# Based on the schema at 
+# Based on the schema at
 # https://www.mediawiki.org/wiki/Manual:Page_table
 #
-# See unit tests for example data. 
+# See unit tests for example data.
 PAGE_ROW_PATTERN=re.compile(
         rb'\('
         rb'(?P<page_id>\d+),'
@@ -178,55 +230,49 @@ class Page(NamedTuple):
     is_redirect: bool = False
 
 
-def _parse_page_line(line: bytes):
-    if not re.match(INSERT_PATTERN, line):
-        return
-    for match in re.finditer(PAGE_ROW_PATTERN, line):
-        yield Page(
-                page_id=int(match.group('page_id')),
-                title=match.group('page_title').decode('utf-8'),
-                namespace=int(match.group('page_namespace')),
-                is_redirect=bool(int(match.group('page_is_redirect'))),
-              )
-
-
-def PageDumpReader(
-    path: str,
-    max_lines: Optional[int] = None,
-
-    # Only include Main and Category namespaces.
-    filter_to_namespaces=(0, 14),
-    drop_redirects=True,
-
-    ):
+class PageDumpReader(DumpReader):
     """Reader for MediaWiki `page` table MySQL dump files.
 
-    Generates Page objects.
+    Parses lines into Page objects.
 
-    The implementation is hacky: it processes the dump file directly in Python.
+    This is somewhat hacky: we process the dump file directly in Python.
     This avoids the time-consuming step of restoring the MySQL database.
 
     See the schema at https://www.mediawiki.org/wiki/Manual:Page_table
-
-    TODO: consider filtering redirects, talk pages, etc. here.
-
-    Args:
-        path: local or GCS, compressed or uncompressed.
-        max_lines: number of lines to truncate at, if present.
     """
-    lines = _line_reader(
-        path, max_lines, 
-        expected_header='pipeline/dump_headers/page.sql.template')
 
-    for line in lines:
-        for page in _parse_page_line(line):
-            if filter_to_namespaces and (page.namespace not in filter_to_namespaces):
+    def __init__(self,
+        pattern: str,
+        filter_to_namespaces=(0, 14),
+        drop_redirects=True,
+        **kwargs):
+        DumpReader.__init__(self,
+            pattern=pattern,
+            read_type=bytes,
+            expected_header='pipeline/dump_headers/page.sql.template',
+            **kwargs)
+
+        self.filter_to_namespaces = filter_to_namespaces
+        self.drop_redirects = drop_redirects
+
+    def parse_line(self, line: bytes) -> Iterator[Page]:
+        if not re.match(INSERT_PATTERN, line):
+            return
+        for match in re.finditer(PAGE_ROW_PATTERN, line):
+            page = Page(
+                    page_id=int(match.group('page_id')),
+                    title=match.group('page_title').decode('utf-8'),
+                    namespace=int(match.group('page_namespace')),
+                    is_redirect=bool(int(match.group('page_is_redirect'))),
+                  )
+
+            if self.filter_to_namespaces and (
+                page.namespace not in self.filter_to_namespaces):
                 continue
-            if drop_redirects and page.is_redirect:
+            if self.drop_redirects and page.is_redirect:
                 continue
 
             yield page
-
 
 
 class Entity(NamedTuple):
@@ -247,45 +293,45 @@ class Entity(NamedTuple):
     aliases: Optional[List[str]] = None
 
 
-
-def _parse_wikidata_json_line(line: str):
-    # The JSON dumps look like
-    # [
-    # {...},
-    # {...},
-    # ...
-    # ]
-    line = line.strip()
-    if line.endswith(','):
-        line = line[:-1]
-    if line in ('[', ']'):
-        return
-
-    obj = json.loads(line)
-    yield Entity(
-        qid=obj['id'],
-        sitelinks=len(obj['sitelinks']),
-        title=obj['sitelinks'].get('enwiki', {}).get('title'),
-        label=obj['labels'].get('en', {}).get('value'),
-        aliases=[d['value'] for d in obj['aliases'].get('en', [])],
-    )
-
-
-def WikidataJsonDumpReader(path: str, max_lines: Optional[int] = None):
+class WikidataJsonDumpReader(DumpReader):
     """Reader for Wikidata JSON dump files.
 
-    Generates Entity objects.
-    
+    Parses lines into Entity objects.
+
     See https://www.wikidata.org/wiki/Wikidata:Database_download
     and https://doc.wikimedia.org/Wikibase/master/php/md_docs_topics_json.html.
-
-    Args:
-        path: local or GCS, compressed or uncompressed.
-        max_lines: number of lines to truncate at, if present.
     """
-    for line in _line_reader(path, max_lines, mode='r'):
-        for entity in _parse_wikidata_json_line(line):
-            yield entity
+    def __init__(self,
+        pattern: str,
+        **kwargs):
+        DumpReader.__init__(self,
+            pattern=pattern,
+            read_type=str,
+            **kwargs)
+
+    def parse_line(self, line: str) -> Iterator[Entity]:
+        # The JSON dumps look like
+        # [
+        # {...},
+        # {...},
+        # ...
+        # ]
+        line = line.strip()
+        if not line:
+            return
+        if line.endswith(','):
+            line = line[:-1]
+        if line in ('[', ']'):
+            return
+
+        obj = json.loads(line)
+        yield Entity(
+            qid=obj['id'],
+            sitelinks=len(obj['sitelinks']),
+            title=obj['sitelinks'].get('enwiki', {}).get('title'),
+            label=obj['labels'].get('en', {}).get('value'),
+            aliases=[d['value'] for d in obj['aliases'].get('en', [])],
+        )
 
 
 class QRankEntry(NamedTuple):
@@ -293,34 +339,35 @@ class QRankEntry(NamedTuple):
     qrank: int
 
 
-def QRankDumpReader(path: str, max_lines: Optional[int] = None):
+class QRankDumpReader(DumpReader):
     """Reader for QRank files.
 
-    Generates QRankEntry objects.
-    
+    Parses lines into QRankEntry objects.
+
     See https://qrank.wmcloud.org/.
-
-    Args:
-        path: local or GCS, compressed or uncompressed.
-        max_lines: number of lines to truncate at, if present.
     """
-    lines = _line_reader(
-        path, max_lines, mode='r', 
-        expected_header='pipeline/dump_headers/qrank.csv.template')
+    def __init__(self,
+        pattern: str,
+        **kwargs):
+        DumpReader.__init__(self,
+            pattern=pattern,
+            read_type=str,
+            expected_header='pipeline/dump_headers/qrank.csv.template',
+            **kwargs)
 
-    def _parse(line):
+    def parse_line(self, line: str) -> Iterator[QRankEntry]:
         line = line.strip()
         if not line:
             return
         qid, _qrank = line.split(',')
+        if qid == 'Entity':
+            # Skip header line.
+            return
+
         yield QRankEntry(
             qid=qid,
             qrank=int(_qrank),
         )
-
-    for line in lines:
-        for entry in _parse(line):
-            yield entry
 
 
 class Wikipedia2VecEntry(NamedTuple):
@@ -332,47 +379,48 @@ class Wikipedia2VecEntry(NamedTuple):
     vector: List[float]
 
 
-def Wikipedia2VecDumpReader(
-    path: str, max_lines: Optional[int] = None, 
-    format='word2vec'):
+class Wikipedia2VecDumpReader(DumpReader):
     """Reader for Wikipedia2Vec embedding files.
 
-    Returns a PCollection of Wikipedia2VecEntry objects.
+    Parses lines into Wikipedia2VecEntry objects.
 
     Currently only the word2vec format is supported.
 
     See https://wikipedia2vec.github.io/wikipedia2vec/pretrained/
     and https://wikipedia2vec.github.io/wikipedia2vec/commands/#saving-embeddings-in-text-format
-
-    Args:
-        path: local or GCS, compressed or uncompressed.
-        max_lines: number of lines to truncate at, if present.
     """
-    lines = _line_reader(path, max_lines, mode='r')
-    entries, dim = map(int, next(lines).strip().split(' '))
+    def __init__(self,
+        pattern: str,
+        format: str = 'word2vec',
+        **kwargs):
+        DumpReader.__init__(self,
+            pattern=pattern,
+            read_type=str,
+            **kwargs)
 
-    def _parse(line: str):
+        if format != 'word2vec':
+            raise NotImplementedError(
+                f'Requested format {format}, but only the word2vec format '
+                'is supported.')
+
+    def parse_line(self, line: str) -> Iterator[Wikipedia2VecEntry]:
         line = line.strip()
         if not line:
             return
 
         tokens = line.split(' ')
-        assert len(tokens) == dim + 1
+        if len(tokens) <= 2:
+            # Skip the header line.
+            return
 
         is_entity = False
         name = tokens[0]
         if name.startswith('ENTITY/'):
             is_entity = True
             name = name[7:]
-        
+
         yield Wikipedia2VecEntry(
             name=name,
             is_entity=is_entity,
             vector=[float(t) for t in tokens[1:]],
         )
-
-    for line in lines:
-        for entry in _parse(line):
-            yield entry
-
-
