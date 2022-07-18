@@ -160,7 +160,15 @@ def _parse_page_line(line: bytes):
               )
 
 
-def PageDumpReader(path: str, max_lines: Optional[int] = None):
+def PageDumpReader(
+    path: str,
+    max_lines: Optional[int] = None,
+
+    # Only include Main and Category namespaces.
+    filter_to_namespaces=(0, 14),
+    drop_redirects=True,
+
+    ):
     """Reader for MediaWiki `page` table MySQL dump files.
 
     Generates Page objects.
@@ -182,6 +190,11 @@ def PageDumpReader(path: str, max_lines: Optional[int] = None):
 
     for line in lines:
         for page in _parse_page_line(line):
+            if filter_to_namespaces and (page.namespace not in filter_to_namespaces):
+                continue
+            if drop_redirects and page.is_redirect:
+                continue
+
             yield page
 
 

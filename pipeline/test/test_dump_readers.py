@@ -16,7 +16,7 @@ class DumpReaderTest(unittest.TestCase):
     def test_page(self):
         reader = PageDumpReader(
                     'pipeline/testdata/enwiki-20220701-page-55lines.sql')
-        self.assertEqual(_count(reader), 44660)
+        self.assertEqual(_count(reader), 29436)
 
 
     def test_wikidata(self):
