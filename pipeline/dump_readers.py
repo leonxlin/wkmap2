@@ -6,6 +6,7 @@ import glob
 from itertools import islice
 from typing import Optional, NamedTuple, List, Union, AnyStr, Type, TypeVar, Iterator, Iterable, Generic
 import json
+import traceback
 
 import apache_beam as beam
 from apache_beam.io.textio import ReadAllFromText
@@ -116,7 +117,19 @@ class DumpReader(PTransform, Generic[AnyStr, R], Iterable[R]):
 
 
     def parse_line(self, line: AnyStr) -> Iterator[R]:
+        # This function should be overridden by child classes.
         yield line
+
+
+    def parse_line_wrapper(self, line: AnyStr):
+        try:
+            for obj in self.parse_line(line):
+                yield obj
+        except Exception:
+            logging.warning(f"Could not parse the following line: {line}")
+            logging.warning(traceback.format_exc())
+            return
+
 
     def expand(self, pipeline):
         if self.read_type == bytes:
@@ -128,7 +141,8 @@ class DumpReader(PTransform, Generic[AnyStr, R], Iterable[R]):
             | beam.Create(self.filenames)
             | Reshuffle()
             | ReadAllFromText(coder=coder)
-            | beam.FlatMap(self.parse_line))
+            | beam.FlatMap(self.parse_line_wrapper))
+
 
     def __iter__(self) -> Iterator[R]:
         """Does not skip header lines."""
@@ -332,6 +346,7 @@ class WikidataJsonDumpReader(DumpReader):
         obj = json.loads(line)
         if 'id' not in obj:
             return
+
         e = Entity(
             qid=obj['id'],
             sitelinks=len(obj.get('sitelinks', {})),

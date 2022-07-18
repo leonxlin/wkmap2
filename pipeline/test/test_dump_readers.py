@@ -41,6 +41,15 @@ class DumpReaderTest(unittest.TestCase):
             assert_that(output, equal_to([49]))
 
 
+    def test_wikidata_parse_fail(self):
+        with TestPipeline() as p:
+            entities = p | dr.WikidataJsonDumpReader(
+                    'pipeline/testdata/wikidata-bad.json')
+            output = entities | beam.combiners.Count.Globally()
+
+            assert_that(output, equal_to([2]))
+
+
     def test_qrank(self):
         reader = dr.QRankDumpReader(
                     'pipeline/testdata/qrank-1000lines.csv')
