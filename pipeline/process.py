@@ -18,6 +18,8 @@ from apache_beam.metrics import MetricsFilter
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.options.pipeline_options import SetupOptions
 
+from smart_open import open as smart_open
+
 import pipeline.dump_readers as dump_readers
 import pipeline.categorization as categorization
 
@@ -135,7 +137,7 @@ def run(argv=None, save_main_session=True):
 		output = categorization.ConvertCategorylinksToQids(categorylinks, pages, entities)
 		output | 'WriteOutput' >> WriteToText(args.output)
 
-	with open(args.output_metrics, 'w') as metrics_file:
+	with smart_open(args.output_metrics, 'w') as metrics_file:
 		metrics_file.write(get_metrics_str(p))
 
 if __name__ == '__main__':
