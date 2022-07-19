@@ -186,6 +186,9 @@ class Categorylink(NamedTuple):
     page_id: int
     category: str
 
+    # 'page', 'subcat', or 'file'. See schema.
+    cl_type: str
+
 
 class CategorylinksDumpReader(DumpReader):
     """Reader for MediaWiki `categorylinks` table MySQL dump files.
@@ -212,6 +215,7 @@ class CategorylinksDumpReader(DumpReader):
             yield Categorylink(
                     page_id=int(match.group('cl_from')),
                     category=match.group('cl_to').decode('utf-8'),
+                    cl_type=match.group('cl_type').decode('utf-8'),
                   )
 
 
