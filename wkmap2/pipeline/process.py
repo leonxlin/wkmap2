@@ -173,7 +173,3 @@ def run(argv=None, save_main_session=True):
 
     with smart_open(os.path.join(args.output, 'metrics'), 'w') as metrics_file:
         metrics_file.write(get_metrics_str(p))
-
-if __name__ == '__main__':
-    logging.getLogger().setLevel(logging.INFO)
-    run()
