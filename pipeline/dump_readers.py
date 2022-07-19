@@ -187,7 +187,7 @@ class Categorylink(NamedTuple):
     category: str
 
     # 'page', 'subcat', or 'file'. See schema.
-    cl_type: str
+    cl_type: str = 'page'
 
 
 class CategorylinksDumpReader(DumpReader):
@@ -201,22 +201,28 @@ class CategorylinksDumpReader(DumpReader):
     See the schema at https://www.mediawiki.org/wiki/Manual:Categorylinks_table
     """
 
-    def __init__(self, pattern: str, **kwargs):
+    def __init__(self, pattern: str, filter_to_types=('page', 'subcat'), **kwargs):
         DumpReader.__init__(self,
             pattern=pattern,
             read_type=bytes,
             expected_header='pipeline/dump_headers/categorylinks.sql.template',
             **kwargs)
 
+        self.filter_to_types = filter_to_types
+
     def parse_line(self, line: bytes) -> Iterator[Categorylink]:
         if not re.match(INSERT_PATTERN, line):
             return
         for match in re.finditer(CATEGORYLINKS_ROW_PATTERN, line):
-            yield Categorylink(
+            link = Categorylink(
                     page_id=int(match.group('cl_from')),
                     category=match.group('cl_to').decode('utf-8'),
                     cl_type=match.group('cl_type').decode('utf-8'),
                   )
+            if self.filter_to_types and (
+                link.cl_type not in self.filter_to_types):
+                continue
+            yield link
 
 
 # Based on the schema at

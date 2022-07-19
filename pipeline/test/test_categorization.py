@@ -3,12 +3,14 @@ import unittest
 from collections.abc import Iterable
 from collections import Counter
 
+import apache_beam as beam
 from apache_beam.testing.test_pipeline import TestPipeline
 from apache_beam.testing.util import assert_that, equal_to, contains_in_any_order
 from apache_beam.testing.util import equal_to
 
 
-from pipeline.categorization import *
+import pipeline.categorization as cat
+from pipeline.categorization import QidAndIsCat
 import pipeline.dump_readers as dump_readers
 
 
@@ -37,6 +39,8 @@ class CategorizationTest(unittest.TestCase):
                     dump_readers.Categorylink(page_id=2, category='Planets'),
                     dump_readers.Categorylink(page_id=3, category='Planets'),
                     dump_readers.Categorylink(page_id=4, category='Animals'),
+                    dump_readers.Categorylink(page_id=5, category='Things'),
+                    dump_readers.Categorylink(page_id=6, category='Things'),
                     ]))
             pages = (p 
                 | 'read pages' 
@@ -47,26 +51,30 @@ class CategorizationTest(unittest.TestCase):
                     dump_readers.Page(page_id=4, title='Ant'),
                     dump_readers.Page(page_id=5, title='Animals', namespace=14),
                     dump_readers.Page(page_id=6, title='Planets', namespace=14),
+                    dump_readers.Page(page_id=7, title='Things', namespace=14),
                     ]))
             entities = (p 
                 | 'read entities' 
                 >> beam.Create([
                     dump_readers.Entity(qid='Q5', title='Category:Animals'),
                     dump_readers.Entity(qid='Q6', title='Category:Planets'),
+                    dump_readers.Entity(qid='Q7', title='Category:Things'),
                     dump_readers.Entity(qid='Q1', title='Beaver'),
                     dump_readers.Entity(qid='Q2', title='Mercury'),
                     dump_readers.Entity(qid='Q3', title='Uranus'),
                     dump_readers.Entity(qid='Q4', title='Ant'),
                     ]))
 
-            output = ConvertCategorylinksToQids(categorylinks, pages, entities)
+            output = cat.ConvertCategorylinksToQids(categorylinks, pages, entities)
 
             assert_that(
               output,
               equal_to([
-                  ('Q5', 'Q1'),
-                  ('Q5', 'Q4'),
-                  ('Q6', 'Q2'),
-                  ('Q6', 'Q3'),
+                  (QidAndIsCat('Q5', True), QidAndIsCat('Q1', False)),
+                  (QidAndIsCat('Q5', True), QidAndIsCat('Q4', False)),
+                  (QidAndIsCat('Q6', True), QidAndIsCat('Q2', False)),
+                  (QidAndIsCat('Q6', True), QidAndIsCat('Q3', False)),
+                  (QidAndIsCat('Q7', True), QidAndIsCat('Q5', True)),
+                  (QidAndIsCat('Q7', True), QidAndIsCat('Q6', True)),
               ]))
 
