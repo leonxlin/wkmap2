@@ -2,11 +2,12 @@ import unittest
 
 from collections.abc import Iterable
 from collections import Counter
-from pipeline.dag_index import *
 
 from apache_beam.testing.test_pipeline import TestPipeline
 from apache_beam.testing.util import assert_that, equal_to, contains_in_any_order
 from apache_beam.testing.util import equal_to, is_empty
+
+from wkmap2.pipeline.dag_index import *
 
 
 class DagIndexTest(unittest.TestCase):

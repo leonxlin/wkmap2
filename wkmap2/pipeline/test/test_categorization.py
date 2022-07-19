@@ -9,10 +9,10 @@ from apache_beam.testing.util import assert_that, equal_to, contains_in_any_orde
 from apache_beam.testing.util import equal_to
 
 
-import pipeline.categorization as cat
-from pipeline.categorization import QidAndIsCat
-import pipeline.dump_readers as dump_readers
-from pipeline.dag_index import Node, Leaf
+import wkmap2.pipeline.categorization as cat
+from wkmap2.pipeline.categorization import QidAndIsCat
+import wkmap2.pipeline.dump_readers as dump_readers
+from wkmap2.pipeline.dag_index import Node, Leaf
 
 
 

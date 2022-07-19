@@ -7,8 +7,8 @@ from apache_beam.metrics import Metrics
 from apache_beam.io import WriteToText
 from apache_beam.pvalue import PCollection
 
-from pipeline.dump_readers import Entity, Page, Categorylink, QRankEntry
-import pipeline.dag_index as dag_index
+from wkmap2.pipeline.dump_readers import Entity, Page, Categorylink, QRankEntry
+import wkmap2.pipeline.dag_index as dag_index
 
 
 class TitleAndIsCat(NamedTuple):

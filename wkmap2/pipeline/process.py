@@ -21,8 +21,8 @@ from apache_beam.options.pipeline_options import SetupOptions
 
 from smart_open import open as smart_open
 
-import pipeline.dump_readers as dump_readers
-import pipeline.categorization as categorization
+import wkmap2.pipeline.dump_readers as dump_readers
+import wkmap2.pipeline.categorization as categorization
 
 
 

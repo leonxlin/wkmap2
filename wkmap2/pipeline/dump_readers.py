@@ -7,6 +7,7 @@ from itertools import islice
 from typing import Optional, NamedTuple, List, Union, AnyStr, Type, TypeVar, Iterator, Iterable, Generic
 import json
 import traceback
+import pkg_resources
 
 import apache_beam as beam
 from apache_beam.io.textio import ReadAllFromText
@@ -15,7 +16,7 @@ from apache_beam.transforms.util import Reshuffle
 
 from smart_open import open as smart_open
 
-import pipeline.gcs_glob as gcs_glob
+import wkmap2.pipeline.gcs_glob as gcs_glob
 
 
 def local_or_gcs_glob(pattern: str) -> Iterable[str]:
@@ -38,6 +39,10 @@ def GlobToLines(
     filenames = local_or_gcs_glob(pattern)
 
     logging.info(f'Found {len(filenames)} files matching {pattern}.')
+
+
+def _header_path(filename: str):
+    return pkg_resources.resource_filename('wkmap2', f'pipeline/dump_headers/{filename}')
 
 
 def _verify_header_line(
@@ -202,7 +207,7 @@ class CategorylinksDumpReader(DumpReader):
     """
 
     def __init__(self, pattern: str, filter_to_types=('page', 'subcat'),
-        expected_header='pipeline/dump_headers/categorylinks.sql.template', **kwargs):
+        expected_header=_header_path('categorylinks.sql.template'), **kwargs):
         DumpReader.__init__(self,
             pattern=pattern,
             read_type=bytes,
@@ -272,7 +277,7 @@ class PageDumpReader(DumpReader):
         pattern: str,
         filter_to_namespaces=(0, 14),
         drop_redirects=True,
-        expected_header='pipeline/dump_headers/page.sql.template',
+        expected_header=_header_path('page.sql.template'),
         **kwargs):
         DumpReader.__init__(self,
             pattern=pattern,
@@ -386,7 +391,7 @@ class QRankDumpReader(DumpReader):
     """
     def __init__(self,
         pattern: str,
-        expected_header='pipeline/dump_headers/qrank.csv.template',
+        expected_header=_header_path('qrank.csv.template'),
         **kwargs):
         DumpReader.__init__(self,
             pattern=pattern,
