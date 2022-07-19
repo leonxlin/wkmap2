@@ -141,6 +141,11 @@ def run(argv=None, save_main_session=True):
       default=None,
       help='Maximum number of lines to read from each dumpfile.')
     parser.add_argument(
+      '--verify-headers',
+      default=True,
+      action='store_true',
+      help='Verify that dump file "headers" match known schema.')
+    parser.add_argument(
       '--no-verify-headers',
       dest='verify_headers',
       action='store_false',

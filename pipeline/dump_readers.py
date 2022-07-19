@@ -201,11 +201,12 @@ class CategorylinksDumpReader(DumpReader):
     See the schema at https://www.mediawiki.org/wiki/Manual:Categorylinks_table
     """
 
-    def __init__(self, pattern: str, filter_to_types=('page', 'subcat'), **kwargs):
+    def __init__(self, pattern: str, filter_to_types=('page', 'subcat'),
+        expected_header='pipeline/dump_headers/categorylinks.sql.template', **kwargs):
         DumpReader.__init__(self,
             pattern=pattern,
             read_type=bytes,
-            expected_header='pipeline/dump_headers/categorylinks.sql.template',
+            expected_header=expected_header,
             **kwargs)
 
         self.filter_to_types = filter_to_types
@@ -271,11 +272,12 @@ class PageDumpReader(DumpReader):
         pattern: str,
         filter_to_namespaces=(0, 14),
         drop_redirects=True,
+        expected_header='pipeline/dump_headers/page.sql.template',
         **kwargs):
         DumpReader.__init__(self,
             pattern=pattern,
             read_type=bytes,
-            expected_header='pipeline/dump_headers/page.sql.template',
+            expected_header=expected_header,
             **kwargs)
 
         self.filter_to_namespaces = filter_to_namespaces
@@ -384,11 +386,12 @@ class QRankDumpReader(DumpReader):
     """
     def __init__(self,
         pattern: str,
+        expected_header='pipeline/dump_headers/qrank.csv.template',
         **kwargs):
         DumpReader.__init__(self,
             pattern=pattern,
             read_type=str,
-            expected_header='pipeline/dump_headers/qrank.csv.template',
+            expected_header=expected_header,
             **kwargs)
 
     def parse_line(self, line: str) -> Iterator[QRankEntry]:
