@@ -26,7 +26,6 @@ def run(argv=None, save_main_session=True):
             default='.gz', help='Suffix for output shard files. Determines compression.')
     arg_parser.add_argument('--num_shards', type=int, default=24,
             help='Number of shards to split file into.')
-    args = arg_parser.parse_args()
     args, pipeline_args = arg_parser.parse_known_args(argv)
 
     pipeline_options = PipelineOptions(pipeline_args)
