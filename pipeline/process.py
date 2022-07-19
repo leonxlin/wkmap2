@@ -11,6 +11,7 @@ python3 -m pipeline.process \
 import argparse
 import json
 import logging
+import os
 
 import apache_beam as beam
 from apache_beam.io import WriteToText
@@ -151,26 +152,10 @@ def run(argv=None, save_main_session=True):
       help='Skip verification of dump file "headers". Use this setting for '
         'sharded dump files.')
     parser.add_argument(
-      '--output-done',
+      '--output',
       type=str,
-      default='/tmp/process_out_done.txt',
-      help='An output file.')
-    parser.add_argument(
-      '--output-pending',
-      type=str,
-      default='/tmp/process_out_pending.txt',
-      help='An output file.')
-    parser.add_argument(
-      '--output-ready',
-      type=str,
-      default='/tmp/process_out_ready.txt',
-      help='An output file.')
-    parser.add_argument(
-      '--output-metrics',
-      type=str,
-      dest='output_metrics',
-      default='/tmp/process_metrics.txt',
-      help='File to output beam metrics to.')
+      default='/tmp/process_out/',
+      help='An output directory.')
     args, pipeline_args = parser.parse_known_args(argv)
 
     pipeline_options = PipelineOptions(pipeline_args)
@@ -182,11 +167,11 @@ def run(argv=None, save_main_session=True):
 
         done, pending, ready = categorization.CreateCategoryIndex(
             categorylinks, pages, entities, qranks)
-        done | 'WriteOutputDone' >> WriteToText(args.output_done)
-        pending | 'WriteOutputPending' >> WriteToText(args.output_pending)
-        ready | 'WriteOutputReady' >> WriteToText(args.output_ready)
+        done | 'WriteOutputDone' >> WriteToText(os.path.join(args.output, 'done_nodes'))
+        pending | 'WriteOutputPending' >> WriteToText(os.path.join(args.output, 'pending_nodes'))
+        ready | 'WriteOutputReady' >> WriteToText(os.path.join(args.output, 'ready_nodes'))
 
-    with smart_open(args.output_metrics, 'w') as metrics_file:
+    with smart_open(os.path.join(args.output, 'metrics'), 'w') as metrics_file:
         metrics_file.write(get_metrics_str(p))
 
 if __name__ == '__main__':
