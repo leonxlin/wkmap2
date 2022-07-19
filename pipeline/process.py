@@ -45,7 +45,9 @@ def create_inputs(p, args):
                 dump_readers.Categorylink(page_id=2, category='Planets'),
                 dump_readers.Categorylink(page_id=3, category='Planets'),
                 dump_readers.Categorylink(page_id=4, category='Animals'),
-                ]))
+                dump_readers.Categorylink(page_id=5, category='Things'),
+                dump_readers.Categorylink(page_id=6, category='Things'),
+            ]))
 
     if args.page_dump:
         pages = (p
@@ -62,7 +64,8 @@ def create_inputs(p, args):
                 dump_readers.Page(page_id=4, title='Ant'),
                 dump_readers.Page(page_id=5, title='Animals', namespace=14),
                 dump_readers.Page(page_id=6, title='Planets', namespace=14),
-                ]))
+                dump_readers.Page(page_id=7, title='Things', namespace=14),
+            ]))
 
     if args.wikidata_dump:
         entities = (p
@@ -75,13 +78,29 @@ def create_inputs(p, args):
             >> beam.Create([
                 dump_readers.Entity(qid='Q5', title='Category:Animals'),
                 dump_readers.Entity(qid='Q6', title='Category:Planets'),
+                dump_readers.Entity(qid='Q7', title='Category:Things'),
                 dump_readers.Entity(qid='Q1', title='Beaver'),
                 dump_readers.Entity(qid='Q2', title='Mercury'),
                 dump_readers.Entity(qid='Q3', title='Uranus'),
                 dump_readers.Entity(qid='Q4', title='Ant'),
-                ]))
+            ]))
 
-    return categorylinks, pages, entities
+    if args.qrank_dump:
+        qranks = (p
+            | 'ReadQRanks'
+            >> dump_readers.QRankDumpReader(
+                args.qrank_dump, **kwargs))
+    else:
+        qranks = (p
+            | 'read qranks'
+            >> beam.Create([
+                dump_readers.QRankEntry(qid='Q1', qrank=1),
+                dump_readers.QRankEntry(qid='Q2', qrank=2),
+                dump_readers.QRankEntry(qid='Q3', qrank=3),
+                dump_readers.QRankEntry(qid='Q4', qrank=4),
+            ]))
+
+    return categorylinks, pages, entities, qranks
 
 
 def get_metrics_str(pipeline):
@@ -109,8 +128,11 @@ def run(argv=None, save_main_session=True):
     parser.add_argument(
       '--wikidata-dump',
       type=str,
-      dest='wikidata_dump',
       help='Path to copy of wikidata-????????-all.json[.gz] (local or GCS).')
+    parser.add_argument(
+      '--qrank-dump',
+      type=str,
+      help='Path to copy of qrank.csv[.gz] (local or GCS).')
     parser.add_argument(
       '--max-readlines',
       type=int,
@@ -129,11 +151,20 @@ def run(argv=None, save_main_session=True):
       help='Skip verification of dump file "headers". Use this setting for '
         'sharded dump files.')
     parser.add_argument(
-      '--output',
+      '--output-done',
       type=str,
-      dest='output',
-      default='/tmp/process_out.txt',
-      help='Output file.')
+      default='/tmp/process_out_done.txt',
+      help='An output file.')
+    parser.add_argument(
+      '--output-pending',
+      type=str,
+      default='/tmp/process_out_pending.txt',
+      help='An output file.')
+    parser.add_argument(
+      '--output-ready',
+      type=str,
+      default='/tmp/process_out_ready.txt',
+      help='An output file.')
     parser.add_argument(
       '--output-metrics',
       type=str,
@@ -147,10 +178,13 @@ def run(argv=None, save_main_session=True):
 
     p = None
     with beam.Pipeline(options=pipeline_options) as p:
-        categorylinks, pages, entities = create_inputs(p, args)
+        categorylinks, pages, entities, qranks = create_inputs(p, args)
 
-        output = categorization.ConvertCategorylinksToQids(categorylinks, pages, entities)
-        output | 'WriteOutput' >> WriteToText(args.output)
+        done, pending, ready = categorization.CreateCategoryIndex(
+            categorylinks, pages, entities, qranks)
+        done | 'WriteOutputDone' >> WriteToText(args.output_done)
+        pending | 'WriteOutputPending' >> WriteToText(args.output_pending)
+        ready | 'WriteOutputReady' >> WriteToText(args.output_ready)
 
     with smart_open(args.output_metrics, 'w') as metrics_file:
         metrics_file.write(get_metrics_str(p))

@@ -95,20 +95,37 @@ def ConvertCategorylinksToQids(
     return ReKey('GetCatQidToQid', cat_title_to_qid, title_to_qid)
 
 
+class _MakeDagLinksFromQidPairs(beam.DoFn):
+    """Outputs dag_index.LeafParentLink and dag_index.NodeLink objects."""
+    def process(self, qid_pair: Tuple[QidAndIsCat, QidAndIsCat]):
+        parent, child = qid_pair
+
+        if child.is_cat:
+            yield beam.pvalue.TaggedOutput('node_link',
+                dag_index.NodeLink(child=child.qid, parent=parent.qid))
+        else:
+            yield beam.pvalue.TaggedOutput('leaf_parent_link',
+                dag_index.LeafParentLink(leaf_id=child.qid, parent=parent.qid))
+
+
+
 def CreateCategoryIndex(
     categorylinks: PCollection[Categorylink],
     pages: PCollection[Page],
     entities: PCollection[Entity],
     qranks: PCollection[QRankEntry],
-    ):
-    raise NotImplementedError
-    # TODO: complete
+    ) -> Tuple[PCollection[dag_index.Node], PCollection[dag_index.Node], PCollection[dag_index.Node]]:
+    """Returns done, ready, pending PCollections."""
 
     cat_qid_to_qid = ConvertCategorylinksToQids(categorylinks, pages, entities)
 
     leaves = (qranks
         | "MakeDagLeaves"
         >> beam.Map(lambda e: dag_index.Leaf(leaf_id=e.qid, score=float(e.qrank))))
-    leaf_parent_links = (qranks
-        | "MakeDagLeaves"
-        >> beam.Map(lambda e: dag_index.Leaf(leaf_id=e.qid, score=float(e.qrank))))
+    node_links, leaf_parent_links = (cat_qid_to_qid
+        | "MakeDagLinksFromQidPairs"
+        >> beam.ParDo(_MakeDagLinksFromQidPairs()).with_outputs(
+            "node_link", "leaf_parent_link"))
+
+    return dag_index.CreateIndex(leaves, leaf_parent_links, node_links)
+
