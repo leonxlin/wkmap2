@@ -9,6 +9,7 @@ python3 -m pipeline.process \
 """
 
 import argparse
+import hashlib
 import json
 import logging
 import os
