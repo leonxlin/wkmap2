@@ -134,7 +134,7 @@ class DatastoreEntityWrapper:
     if self.id_field:
         key = str(dic[self.id_field])
     else:
-        key = hashlib.sha1(str(nt)).hexdigest()
+        key = hashlib.sha1(str(nt).encode('utf-8')).hexdigest()
 
     entity = DatastoreEntity(DatastoreKey([self.kind, key]))
     entity.set_properties(dic)
