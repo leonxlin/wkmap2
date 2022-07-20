@@ -1,5 +1,7 @@
 """Beam transforms for indexing the top-scoring N descendants of a DAG node."""
 
+import logging
+
 import apache_beam as beam
 from apache_beam.pvalue import PCollection
 
@@ -54,8 +56,16 @@ def CreateNodes(
 		leaf_id, d = join_item
 		if not d['parents']:
 			return
-		assert len(d['scores']) == 1
-		leaf = Leaf(leaf_id=leaf_id, score=d['scores'][0])
+
+		score = 0
+		if d['scores']:
+			score = d['scores'][0]
+			if len(d['scores']) > 1:
+				logging.warning(
+					f'More than 1 score found for leaf_id '
+					f'{leaf_id}: {d["scores"]}')
+
+		leaf = Leaf(leaf_id=leaf_id, score=score)
 		for parent_id in d['parents']:
 			yield parent_id, leaf
 
