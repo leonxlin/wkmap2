@@ -10,6 +10,7 @@ setuptools.setup(
     install_requires=[
         'apache-beam',
         'google-cloud-storage',
+        'google-cloud-datastore',
         'smart-open',
     ], 
     packages=setuptools.find_packages(),
