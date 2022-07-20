@@ -14,6 +14,10 @@ import logging
 import os
 
 import apache_beam as beam
+from apache_beam.io.gcp.datastore.v1new.datastoreio import WriteToDatastore
+from apache_beam.io.gcp.datastore.v1new.types import Entity as DatastoreEntity
+from apache_beam.io.gcp.datastore.v1new.types import Key as DatastoreKey
+from apache_beam.options.pipeline_options import GoogleCloudOptions
 from apache_beam.io import WriteToText
 from apache_beam.metrics import MetricsFilter
 from apache_beam.options.pipeline_options import PipelineOptions
@@ -115,6 +119,27 @@ def get_metrics_str(pipeline):
     return json.dumps(ret, indent=4)
 
 
+class DatastoreEntityWrapper:
+  """
+  Create a Cloud Datastore entity from a given NamedTuple object.
+  """
+
+  def __init__(self, kind: str, id_field: str):
+    self.kind = kind
+    self.id_field = id_field
+
+  def make_entity(self, nt):
+    dic = nt._asdict()
+    if self.id_field:
+        key = str(dic[self.id_field])
+    else:
+        key = hashlib.sha1(str(nt)).hexdigest()
+
+    entity = DatastoreEntity(DatastoreKey([self.kind, key]))
+    entity.set_properties(dic)
+    return entity
+
+
 
 def run(argv=None, save_main_session=True):
     parser = argparse.ArgumentParser()
@@ -152,6 +177,11 @@ def run(argv=None, save_main_session=True):
       help='Skip verification of dump file "headers". Use this setting for '
         'sharded dump files.')
     parser.add_argument(
+      '--datastore',
+      default=False,
+      action='store_true',
+      help='Write some values to datastore.')
+    parser.add_argument(
       '--output',
       type=str,
       default='/tmp/process_out/',
@@ -160,16 +190,33 @@ def run(argv=None, save_main_session=True):
 
     pipeline_options = PipelineOptions(pipeline_args)
     pipeline_options.view_as(SetupOptions).save_main_session = save_main_session
+    project = pipeline_options.view_as(GoogleCloudOptions).project
 
     p = None
     with beam.Pipeline(options=pipeline_options) as p:
         categorylinks, pages, entities, qranks = create_inputs(p, args)
+
+        if args.datastore:
+            (pages
+                | 'PageToDsEntity' >> beam.Map(
+                    DatastoreEntityWrapper('Page', 'page_id').make_entity)
+                | 'WritePagesToDatastore' >> WriteToDatastore(project))
+            (categorylinks
+                | 'CategorylinksToDsEntity' >> beam.Map(
+                    DatastoreEntityWrapper('Categorylink', None).make_entity)
+                | 'WriteCategorylinksToDatastore' >> WriteToDatastore(project))
 
         done, pending, ready = categorization.CreateCategoryIndex(
             categorylinks, pages, entities, qranks)
         done | 'WriteOutputDone' >> WriteToText(os.path.join(args.output, 'done_nodes'))
         pending | 'WriteOutputPending' >> WriteToText(os.path.join(args.output, 'pending_nodes'))
         ready | 'WriteOutputReady' >> WriteToText(os.path.join(args.output, 'ready_nodes'))
+
+        if args.datastore:
+            (done
+                | 'DoneNodeToDsEntity' >> beam.Map(
+                    DatastoreEntityWrapper('DoneNode', 'node_id').make_entity)
+                | 'WriteDoneNodesToDatastore' >> WriteToDatastore(project))
 
     with smart_open(os.path.join(args.output, 'metrics'), 'w') as metrics_file:
         metrics_file.write(get_metrics_str(p))
