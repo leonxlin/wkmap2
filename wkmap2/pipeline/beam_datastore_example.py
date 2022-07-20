@@ -40,13 +40,13 @@ class EntityWrapper(object):
     self._kind = kind
     self._parent_key = parent_key
 
-    def make_entity(self, content):
-      """Create entity from given string."""
-      key = Key([self._kind, hashlib.sha1(content.encode('utf-8')).hexdigest()],
-        parent=self._parent_key)
-      entity = Entity(key)
-      entity.set_properties({'content': str(content)})
-      return entity
+  def make_entity(self, content):
+    """Create entity from given string."""
+    key = Key([self._kind, hashlib.sha1(content.encode('utf-8')).hexdigest()],
+      parent=self._parent_key)
+    entity = Entity(key)
+    entity.set_properties({'content': str(content)})
+    return entity
 
 
 
