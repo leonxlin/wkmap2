@@ -121,24 +121,36 @@ def get_metrics_str(pipeline):
 
 
 class DatastoreEntityWrapper:
-  """
-  Create a Cloud Datastore entity from a given NamedTuple object.
-  """
+    """
+    Create a Cloud Datastore entity from a given NamedTuple object.
+    """
 
-  def __init__(self, kind: str, id_field: str):
-    self.kind = kind
-    self.id_field = id_field
+    def __init__(self, kind: str, id_field: str):
+        self.kind = kind
+        self.id_field = id_field
 
-  def make_entity(self, nt):
-    dic = nt._asdict()
-    if self.id_field:
-        key = str(dic[self.id_field])
-    else:
-        key = hashlib.sha1(str(nt).encode('utf-8')).hexdigest()
+    def make_entity(self, nt):
+        dic = nt._asdict()
+        if self.id_field:
+            key = str(dic[self.id_field])
+        else:
+            key = hashlib.sha1(str(nt).encode('utf-8')).hexdigest()
 
-    entity = DatastoreEntity(DatastoreKey([self.kind, key]))
-    entity.set_properties(dic)
-    return entity
+        entity = DatastoreEntity(DatastoreKey([self.kind, key]))
+        entity.set_properties(dic)
+        return entity
+
+    def make_entity_stringify(self, nt):
+        """For use when `nt._asdict()` can't be passed to `set_properties`."""
+        dic = nt._asdict()
+        if self.id_field:
+            key = str(dic[self.id_field])
+        else:
+            key = hashlib.sha1(str(nt).encode('utf-8')).hexdigest()
+
+        entity = DatastoreEntity(DatastoreKey([self.kind, key]))
+        entity.set_properties({'content': str(nt)})
+        return entity
 
 
 
@@ -216,7 +228,7 @@ def run(argv=None, save_main_session=True):
         if args.datastore:
             (done
                 | 'DoneNodeToDsEntity' >> beam.Map(
-                    DatastoreEntityWrapper('DoneNode', 'node_id').make_entity)
+                    DatastoreEntityWrapper('DoneNode', 'node_id').make_entity_stringify)
                 | 'WriteDoneNodesToDatastore' >> WriteToDatastore(project))
 
     with smart_open(os.path.join(args.output, 'metrics'), 'w') as metrics_file:
