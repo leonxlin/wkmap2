@@ -25,7 +25,7 @@ def new_pipeline_with_job_name(pipeline_options, job_name, suffix):
   if job_name:
     gcp_options.job_name = job_name + suffix
 
-  return TestPipeline(options=pipeline_options)
+    return TestPipeline(options=pipeline_options)
 
 
 
@@ -40,13 +40,13 @@ class EntityWrapper(object):
     self._kind = kind
     self._parent_key = parent_key
 
-def make_entity(self, content):
-    """Create entity from given string."""
-    key = Key([self._kind, hashlib.sha1(content.encode('utf-8')).hexdigest()],
-              parent=self._parent_key)
-    entity = Entity(key)
-    entity.set_properties({'content': str(content)})
-    return entity
+    def make_entity(self, content):
+      """Create entity from given string."""
+      key = Key([self._kind, hashlib.sha1(content.encode('utf-8')).hexdigest()],
+        parent=self._parent_key)
+      entity = Entity(key)
+      entity.set_properties({'content': str(content)})
+      return entity
 
 
 
@@ -56,18 +56,18 @@ def run(argv=None):
   parser = argparse.ArgumentParser()
 
   parser.add_argument('--kind',
-                      dest='kind',
-                      default='writereadtest',
-                      help='Datastore Kind')
+      dest='kind',
+      default='writereadtest',
+      help='Datastore Kind')
   parser.add_argument('--num_entities',
-                      dest='num_entities',
-                      type=int,
-                      required=True,
-                      help='Number of entities to write')
+      dest='num_entities',
+      type=int,
+      required=True,
+      help='Number of entities to write')
   parser.add_argument('--limit',
-                      dest='limit',
-                      type=int,
-                      help='Limit of number of entities to write')
+      dest='limit',
+      type=int,
+      help='Limit of number of entities to write')
 
   known_args, pipeline_args = parser.parse_known_args(argv)
   pipeline_options = PipelineOptions(pipeline_args)
@@ -84,10 +84,10 @@ def run(argv=None):
   logging.info('Writing %s entities to %s', num_entities, project)
   p = new_pipeline_with_job_name(pipeline_options, job_name, '-write')
   _ = (p
-       | 'Input' >> beam.Create(list(range(num_entities)))
-       | 'To String' >> beam.Map(str)
-       | 'To Entity' >> beam.Map(EntityWrapper(kind, ancestor_key).make_entity)
-       | 'Write to Datastore' >> WriteToDatastore(project))
+     | 'Input' >> beam.Create(list(range(num_entities)))
+     | 'To String' >> beam.Map(str)
+     | 'To Entity' >> beam.Map(EntityWrapper(kind, ancestor_key).make_entity)
+     | 'Write to Datastore' >> WriteToDatastore(project))
   p.run()
 
   query = Query(kind=kind, project=project, ancestor=ancestor_key)
@@ -95,7 +95,7 @@ def run(argv=None):
   # that the expected entities were read.
   if known_args.limit is not None:
     logging.info('Querying a limited set of %s entities and verifying count.',
-                 known_args.limit)
+       known_args.limit)
     p = new_pipeline_with_job_name(pipeline_options, job_name, '-verify-limit')
     query.limit = known_args.limit
     entities = p | 'read from datastore' >> ReadFromDatastore(query)
