@@ -313,7 +313,8 @@ class Entity(NamedTuple):
 
     qid: str
 
-    # enwiki sitelink title.
+    # enwiki sitelink title, with underscores instead of spaces.
+    # Namespace prefix (e.g., 'Category:') included.
     title: Optional[str] = None
 
     # English label.
@@ -364,10 +365,14 @@ class WikidataJsonDumpReader(DumpReader):
         if 'id' not in obj:
             return
 
+        normalized_title = obj.get('sitelinks', {}).get('enwiki', {}).get('title')
+        if normalized_title:
+            normalized_title = normalized_title.replace(' ', '_')
+
         e = Entity(
             qid=obj['id'],
             sitelinks=len(obj.get('sitelinks', {})),
-            title=obj.get('sitelinks', {}).get('enwiki', {}).get('title'),
+            title=normalized_title,
             label=obj.get('labels', {}).get('en', {}).get('value'),
             aliases=[d['value'] for d in obj.get('aliases', {}).get('en', [])],
         )
