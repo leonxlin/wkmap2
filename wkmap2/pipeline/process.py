@@ -14,6 +14,8 @@ import json
 import logging
 import os
 
+from typing import NamedTuple, List
+
 import apache_beam as beam
 from apache_beam.io.gcp.datastore.v1new.datastoreio import WriteToDatastore
 from apache_beam.io.gcp.datastore.v1new.types import Entity as DatastoreEntity
@@ -153,6 +155,10 @@ class DatastoreEntityWrapper:
         return entity
 
 
+class PageAndCatTitles(NamedTuple):
+    page_id: int
+    cat_titles: List[str]
+
 
 def run(argv=None, save_main_session=True):
     parser = argparse.ArgumentParser()
@@ -210,14 +216,28 @@ def run(argv=None, save_main_session=True):
         categorylinks, pages, entities, qranks = create_inputs(p, args)
 
         if args.datastore:
-            (pages
-                | 'PageToDsEntity' >> beam.Map(
-                    DatastoreEntityWrapper('Page', 'page_id').make_entity)
-                | 'WritePagesToDatastore' >> WriteToDatastore(project))
-            (categorylinks
-                | 'CategorylinksToDsEntity' >> beam.Map(
-                    DatastoreEntityWrapper('Categorylink', None).make_entity)
-                | 'WriteCategorylinksToDatastore' >> WriteToDatastore(project))
+            # # Successful:
+            # (pages
+            #     | 'PageToDsEntity' >> beam.Map(
+            #         DatastoreEntityWrapper('Page', 'page_id').make_entity)
+            #     | 'WritePagesToDatastore' >> WriteToDatastore(project))
+
+            sources = {
+                'pages': pages | 'KeyByPageId' >> beam.Map(lambda page: (page.page_id, 1)),
+                'catlinks': categorylinks | 'KeyCatlinksByPageId' >> beam.Map(lambda link: (link.page_id, link.category)),
+            }
+            def _process_join(join_item):
+                page_id, dic = join_item
+                if not dic['pages']:
+                    return
+                yield PageAndCatTitles(page_id=page_id, cat_titles=sorted(dic['catlinks']))
+            (sources 
+                | 'JoinForCatlinksToDatastore' >> beam.CoGroupByKey()
+                | 'ProcessJoinForCatlinksToDatastore' >> beam.FlatMap(_process_join)
+                | 'PageAndCatTitlesToDsEntity' >> beam.Map(
+                    DatastoreEntityWrapper('PageAndCatTitles', 'page_id').make_entity)
+                | 'WritePageAndCatTitlesToDatastore' >> WriteToDatastore(project))
+
 
         done, pending, ready = categorization.CreateCategoryIndex(
             categorylinks, pages, entities, qranks)
