@@ -57,13 +57,13 @@ class CategorizationTest(unittest.TestCase):
             entities = (p 
                 | 'read entities' 
                 >> beam.Create([
-                    dump_readers.Entity(qid='Q5', title='Category:Animals'),
-                    dump_readers.Entity(qid='Q6', title='Category:Planets'),
-                    dump_readers.Entity(qid='Q7', title='Category:Things'),
-                    dump_readers.Entity(qid='Q1', title='Beaver'),
-                    dump_readers.Entity(qid='Q2', title='Mercury'),
-                    dump_readers.Entity(qid='Q3', title='Uranus'),
-                    dump_readers.Entity(qid='Q4', title='Ant'),
+                    dump_readers.Entity(qid=5, title='Category:Animals'),
+                    dump_readers.Entity(qid=6, title='Category:Planets'),
+                    dump_readers.Entity(qid=7, title='Category:Things'),
+                    dump_readers.Entity(qid=1, title='Beaver'),
+                    dump_readers.Entity(qid=2, title='Mercury'),
+                    dump_readers.Entity(qid=3, title='Uranus'),
+                    dump_readers.Entity(qid=4, title='Ant'),
                     ]))
 
             output = cat.ConvertCategorylinksToQids(categorylinks, pages, entities)
@@ -71,12 +71,12 @@ class CategorizationTest(unittest.TestCase):
             assert_that(
               output,
               equal_to([
-                  (QidAndIsCat('Q5', True), QidAndIsCat('Q1', False)),
-                  (QidAndIsCat('Q5', True), QidAndIsCat('Q4', False)),
-                  (QidAndIsCat('Q6', True), QidAndIsCat('Q2', False)),
-                  (QidAndIsCat('Q6', True), QidAndIsCat('Q3', False)),
-                  (QidAndIsCat('Q7', True), QidAndIsCat('Q5', True)),
-                  (QidAndIsCat('Q7', True), QidAndIsCat('Q6', True)),
+                  (QidAndIsCat(5, True), QidAndIsCat(1, False)),
+                  (QidAndIsCat(5, True), QidAndIsCat(4, False)),
+                  (QidAndIsCat(6, True), QidAndIsCat(2, False)),
+                  (QidAndIsCat(6, True), QidAndIsCat(3, False)),
+                  (QidAndIsCat(7, True), QidAndIsCat(5, True)),
+                  (QidAndIsCat(7, True), QidAndIsCat(6, True)),
               ]))
 
     def test_create_category_index(self):
@@ -105,21 +105,21 @@ class CategorizationTest(unittest.TestCase):
             entities = (p 
                 | 'read entities' 
                 >> beam.Create([
-                    dump_readers.Entity(qid='Q5', title='Category:Animals'),
-                    dump_readers.Entity(qid='Q6', title='Category:Planets'),
-                    dump_readers.Entity(qid='Q7', title='Category:Things'),
-                    dump_readers.Entity(qid='Q1', title='Beaver'),
-                    dump_readers.Entity(qid='Q2', title='Mercury'),
-                    dump_readers.Entity(qid='Q3', title='Uranus'),
-                    dump_readers.Entity(qid='Q4', title='Ant'),
+                    dump_readers.Entity(qid=5, title='Category:Animals'),
+                    dump_readers.Entity(qid=6, title='Category:Planets'),
+                    dump_readers.Entity(qid=7, title='Category:Things'),
+                    dump_readers.Entity(qid=1, title='Beaver'),
+                    dump_readers.Entity(qid=2, title='Mercury'),
+                    dump_readers.Entity(qid=3, title='Uranus'),
+                    dump_readers.Entity(qid=4, title='Ant'),
                     ]))
             qranks = (p 
                 | 'read qranks' 
                 >> beam.Create([
-                    dump_readers.QRankEntry(qid='Q1', qrank=1),
-                    dump_readers.QRankEntry(qid='Q2', qrank=2),
-                    dump_readers.QRankEntry(qid='Q3', qrank=3),
-                    dump_readers.QRankEntry(qid='Q4', qrank=4),
+                    dump_readers.QRankEntry(qid=1, qrank=10),
+                    dump_readers.QRankEntry(qid=2, qrank=20),
+                    dump_readers.QRankEntry(qid=3, qrank=30),
+                    dump_readers.QRankEntry(qid=4, qrank=40),
                     ]))
 
             done, _, _ = cat.CreateCategoryIndex(categorylinks, pages, entities, qranks)
@@ -127,20 +127,20 @@ class CategorizationTest(unittest.TestCase):
             assert_that(
               done,
               equal_to([
-                    Node(node_id='Q5',
-                        top_leaves=[Leaf('Q4', 4), Leaf('Q1', 1)],
-                        parents={'Q7'},
+                    Node(node_id=5,
+                        top_leaves=[Leaf(4, 40), Leaf(1, 10)],
+                        parents={7},
                         children=set(),
                         unprocessed_children=set()),
-                    Node(node_id='Q6',
-                        top_leaves=[Leaf('Q3', 3), Leaf('Q2', 2)],
-                        parents={'Q7'},
+                    Node(node_id=6,
+                        top_leaves=[Leaf(3, 30), Leaf(2, 20)],
+                        parents={7},
                         children=set(),
                         unprocessed_children=set()),
-                    Node(node_id='Q7',
-                        top_leaves=[Leaf('Q4', 4), Leaf('Q3', 3), Leaf('Q2', 2), Leaf('Q1', 1)],
+                    Node(node_id=7,
+                        top_leaves=[Leaf(4, 40), Leaf(3, 30), Leaf(2, 20), Leaf(1, 10)],
                         parents=set(),
-                        children={'Q5', 'Q6'},
+                        children={5, 6},
                         unprocessed_children=set()),
               ]))
 

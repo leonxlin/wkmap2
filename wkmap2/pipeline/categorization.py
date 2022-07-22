@@ -16,7 +16,7 @@ class TitleAndIsCat(NamedTuple):
     is_cat: bool
 
 class QidAndIsCat(NamedTuple):
-    qid: str
+    qid: int
     is_cat: bool
 
 

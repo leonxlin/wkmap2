@@ -311,7 +311,8 @@ class PageDumpReader(DumpReader):
 class Entity(NamedTuple):
     """Info extracted about a Wikidata entity."""
 
-    qid: str
+    # E.g., 123 for 'Q123'.
+    qid: int
 
     # enwiki sitelink title, with underscores instead of spaces.
     # Namespace prefix (e.g., 'Category:') included.
@@ -325,6 +326,11 @@ class Entity(NamedTuple):
 
     # English aliases.
     aliases: Optional[List[str]] = None
+
+
+def parse_qid(qid_str: str):
+    assert qid_str.startswith('Q')
+    return int(qid_str[1:])
 
 
 class WikidataJsonDumpReader(DumpReader):
@@ -370,7 +376,7 @@ class WikidataJsonDumpReader(DumpReader):
             normalized_title = normalized_title.replace(' ', '_')
 
         e = Entity(
-            qid=obj['id'],
+            qid=parse_qid(obj['id']),
             sitelinks=len(obj.get('sitelinks', {})),
             title=normalized_title,
             label=obj.get('labels', {}).get('en', {}).get('value'),
@@ -383,7 +389,9 @@ class WikidataJsonDumpReader(DumpReader):
 
 
 class QRankEntry(NamedTuple):
-    qid: str
+    # E.g., 123 for 'Q123'.
+    qid: int
+
     qrank: int
 
 
@@ -408,13 +416,13 @@ class QRankDumpReader(DumpReader):
         line = line.strip()
         if not line:
             return
-        qid, _qrank = line.split(',')
-        if qid == 'Entity':
+        _qid, _qrank = line.split(',')
+        if _qid == 'Entity':
             # Skip header line.
             return
 
         yield QRankEntry(
-            qid=qid,
+            qid=parse_qid(_qid),
             qrank=int(_qrank),
         )
 

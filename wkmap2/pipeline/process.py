@@ -84,13 +84,13 @@ def create_inputs(p, args):
         entities = (p
             | 'read entities'
             >> beam.Create([
-                dump_readers.Entity(qid='Q5', title='Category:Animals'),
-                dump_readers.Entity(qid='Q6', title='Category:Planets'),
-                dump_readers.Entity(qid='Q7', title='Category:Things'),
-                dump_readers.Entity(qid='Q1', title='Beaver'),
-                dump_readers.Entity(qid='Q2', title='Mercury'),
-                dump_readers.Entity(qid='Q3', title='Uranus'),
-                dump_readers.Entity(qid='Q4', title='Ant'),
+                dump_readers.Entity(qid=5, title='Category:Animals'),
+                dump_readers.Entity(qid=6, title='Category:Planets'),
+                dump_readers.Entity(qid=7, title='Category:Things'),
+                dump_readers.Entity(qid=1, title='Beaver'),
+                dump_readers.Entity(qid=2, title='Mercury'),
+                dump_readers.Entity(qid=3, title='Uranus'),
+                dump_readers.Entity(qid=4, title='Ant'),
             ]))
 
     if args.qrank_dump:
@@ -102,10 +102,10 @@ def create_inputs(p, args):
         qranks = (p
             | 'read qranks'
             >> beam.Create([
-                dump_readers.QRankEntry(qid='Q1', qrank=1),
-                dump_readers.QRankEntry(qid='Q2', qrank=2),
-                dump_readers.QRankEntry(qid='Q3', qrank=3),
-                dump_readers.QRankEntry(qid='Q4', qrank=4),
+                dump_readers.QRankEntry(qid=1, qrank=10),
+                dump_readers.QRankEntry(qid=2, qrank=20),
+                dump_readers.QRankEntry(qid=3, qrank=30),
+                dump_readers.QRankEntry(qid=4, qrank=40),
             ]))
 
     return categorylinks, pages, entities, qranks

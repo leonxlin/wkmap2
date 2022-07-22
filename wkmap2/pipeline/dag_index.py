@@ -5,11 +5,11 @@ import logging
 import apache_beam as beam
 from apache_beam.pvalue import PCollection
 
-from typing import NamedTuple, List, Set, Tuple, Iterable
+from typing import NamedTuple, List, Set, Tuple, Iterable, TypeVar
 
 
-LeafId = str
-NodeId = str
+LeafId = TypeVar('LeafId', int, str)
+NodeId = TypeVar('NodeId', int, str)
 
 class Leaf(NamedTuple):
 	leaf_id: LeafId
