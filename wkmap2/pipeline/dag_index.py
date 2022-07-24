@@ -5,6 +5,7 @@ import logging
 import apache_beam as beam
 from apache_beam.pvalue import PCollection
 from apache_beam.transforms.ptransform import PTransform, ptransform_fn
+from apache_beam.transforms.util import Reshuffle
 
 from typing import NamedTuple, List, Set, Tuple, Iterable, TypeVar, Dict, Optional
 
@@ -268,7 +269,8 @@ def RunGatherAncestorsIteration(nodes: PCollection[NodeWithAncestors], current_d
 
     new_links = (sources 
         | 'JoinByEdgeAncestor' >> beam.CoGroupByKey()
-        | 'ProcessJoinByEdgeAncestor' >> beam.FlatMap(_process_join_by_edge_anc))
+        | 'ProcessJoinByEdgeAncestor' >> beam.FlatMap(_process_join_by_edge_anc)
+        | 'ReshuffleAfterJoinByEdgeAncestor' >> Reshuffle())
 
     sources = {
         'node': id_to_node,
@@ -298,5 +300,6 @@ def RunGatherAncestorsIteration(nodes: PCollection[NodeWithAncestors], current_d
 
     return (sources 
         | 'JoinNewAncestors' >> beam.CoGroupByKey()
-        | 'ProcessJoinNewAncestors' >> beam.Map(_process_join_new_anc))
+        | 'ProcessJoinNewAncestors' >> beam.Map(_process_join_new_anc)
+        | 'ReshuffleAfterJoinNewAncestors' >> Reshuffle())
 
