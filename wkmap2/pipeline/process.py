@@ -160,6 +160,48 @@ class PageAndCatTitles(NamedTuple):
     cat_titles: List[str]
 
 
+def build_categorization_pipeline(p, args):
+    categorylinks, pages, entities, qranks = create_inputs(p, args)
+
+    # if args.datastore:
+        # # Successful:
+        # (pages
+        #     | 'PageToDsEntity' >> beam.Map(
+        #         DatastoreEntityWrapper('Page', 'page_id').make_entity)
+        #     | 'WritePagesToDatastore' >> WriteToDatastore(project))
+
+        # Unsuccessful: sometimes content is too long (longer than 1500 bytes)
+        # sources = {
+        #     'pages': pages | 'KeyByPageId' >> beam.Map(lambda page: (page.page_id, 1)),
+        #     'catlinks': categorylinks | 'KeyCatlinksByPageId' >> beam.Map(lambda link: (link.page_id, link.category)),
+        # }
+        # def _process_join(join_item):
+        #     page_id, dic = join_item
+        #     if not dic['pages']:
+        #         return
+        #     yield PageAndCatTitles(page_id=page_id, cat_titles=sorted(dic['catlinks']))
+        # (sources 
+        #     | 'JoinForCatlinksToDatastore' >> beam.CoGroupByKey()
+        #     | 'ProcessJoinForCatlinksToDatastore' >> beam.FlatMap(_process_join)
+        #     | 'PageAndCatTitlesToDsEntity' >> beam.Map(
+        #         DatastoreEntityWrapper('PageAndCatTitles', 'page_id').make_entity)
+        #     | 'WritePageAndCatTitlesToDatastore' >> WriteToDatastore(project))
+
+
+    done, pending, ready = categorization.CreateCategoryIndex(
+        categorylinks, pages, entities, qranks)
+    done | 'WriteOutputDone' >> WriteToText(os.path.join(args.output, 'done_nodes'))
+    pending | 'WriteOutputPending' >> WriteToText(os.path.join(args.output, 'pending_nodes'))
+    ready | 'WriteOutputReady' >> WriteToText(os.path.join(args.output, 'ready_nodes'))
+
+    # if args.datastore:
+    #     (done
+    #         | 'DoneNodeToDsEntity' >> beam.Map(
+    #             DatastoreEntityWrapper('DoneNode', 'node_id').make_entity_stringify)
+    #         | 'WriteDoneNodesToDatastore' >> WriteToDatastore(project))
+
+
+
 def run(argv=None, save_main_session=True):
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -213,44 +255,7 @@ def run(argv=None, save_main_session=True):
 
     p = None
     with beam.Pipeline(options=pipeline_options) as p:
-        categorylinks, pages, entities, qranks = create_inputs(p, args)
-
-        # if args.datastore:
-            # # Successful:
-            # (pages
-            #     | 'PageToDsEntity' >> beam.Map(
-            #         DatastoreEntityWrapper('Page', 'page_id').make_entity)
-            #     | 'WritePagesToDatastore' >> WriteToDatastore(project))
-
-            # Unsuccessful: sometimes content is too long (longer than 1500 bytes)
-            # sources = {
-            #     'pages': pages | 'KeyByPageId' >> beam.Map(lambda page: (page.page_id, 1)),
-            #     'catlinks': categorylinks | 'KeyCatlinksByPageId' >> beam.Map(lambda link: (link.page_id, link.category)),
-            # }
-            # def _process_join(join_item):
-            #     page_id, dic = join_item
-            #     if not dic['pages']:
-            #         return
-            #     yield PageAndCatTitles(page_id=page_id, cat_titles=sorted(dic['catlinks']))
-            # (sources 
-            #     | 'JoinForCatlinksToDatastore' >> beam.CoGroupByKey()
-            #     | 'ProcessJoinForCatlinksToDatastore' >> beam.FlatMap(_process_join)
-            #     | 'PageAndCatTitlesToDsEntity' >> beam.Map(
-            #         DatastoreEntityWrapper('PageAndCatTitles', 'page_id').make_entity)
-            #     | 'WritePageAndCatTitlesToDatastore' >> WriteToDatastore(project))
-
-
-        done, pending, ready = categorization.CreateCategoryIndex(
-            categorylinks, pages, entities, qranks)
-        done | 'WriteOutputDone' >> WriteToText(os.path.join(args.output, 'done_nodes'))
-        pending | 'WriteOutputPending' >> WriteToText(os.path.join(args.output, 'pending_nodes'))
-        ready | 'WriteOutputReady' >> WriteToText(os.path.join(args.output, 'ready_nodes'))
-
-        # if args.datastore:
-        #     (done
-        #         | 'DoneNodeToDsEntity' >> beam.Map(
-        #             DatastoreEntityWrapper('DoneNode', 'node_id').make_entity_stringify)
-        #         | 'WriteDoneNodesToDatastore' >> WriteToDatastore(project))
+        build_categorization_pipeline(p, args)
 
     with smart_open(os.path.join(args.output, 'metrics'), 'w') as metrics_file:
         metrics_file.write(get_metrics_str(p))
