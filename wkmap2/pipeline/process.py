@@ -87,7 +87,7 @@ def get_entities(p, args, **kwargs):
         return (p
             | 'ReadEntities'
             >> dump_readers.WikidataJsonDumpReader(
-                args.wikidata_dump, require_title=True, **kwargs))
+                args.wikidata_dump, **kwargs))
 
     return (p
         | 'CreateEntities'
@@ -123,7 +123,11 @@ def get_qranks(p, args, **kwargs):
 
 
 def create_inputs(p, args):
-    return get_categorylinks(p, args), get_pages(p, args), get_entities(p, args), get_qranks(p, args)
+    return (
+        get_categorylinks(p, args), 
+        get_pages(p, args), 
+        get_entities(p, args, require_title=True), 
+        get_qranks(p, args))
 
 
 def get_metrics_str(pipeline):
