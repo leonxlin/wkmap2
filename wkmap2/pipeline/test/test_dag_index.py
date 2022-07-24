@@ -10,7 +10,8 @@ from apache_beam.testing.util import assert_that, equal_to, contains_in_any_orde
 from apache_beam.testing.util import equal_to, is_empty
 
 from wkmap2.pipeline.dag_index import (Leaf, LeafParentLink, NodeLink, Node,
-    CreateNodes, CreateIndex, GatherAncestors, NodeWithAncestors, Depth)
+    CreateNodes, CreateIndex, GatherAncestors, NodeWithAncestors, Depth, 
+    create_node_with_ancestors)
 
 
 class DagIndexTest(unittest.TestCase):
@@ -175,30 +176,18 @@ class DagIndexTest(unittest.TestCase):
             )
 
 
-    def _nodewa(self, node_id, instance_of: List = None, subclass_of: List = None):
-        ancestors = {}
-        if instance_of:
-            for anc in instance_of:
-                ancestors[anc] = Depth(instances=1, subclasses=0)
-        if subclass_of:
-            for anc in subclass_of:
-                ancestors[anc] = Depth(instances=0, subclasses=1)
-
-        return NodeWithAncestors(node_id=node_id,
-            ancestors=ancestors,
-            unprocessed_ancestors=set(ancestors.keys()))
-
-
     def test_gather_ancestors(self):
+        _nodewa = create_node_with_ancestors
+
         with TestPipeline() as p:
             nodes = p | "CreateNodes" >> beam.Create([
-                self._nodewa('sergey', instance_of=['human', 'ceo']),
-                self._nodewa('ceo', subclass_of=['human']),
-                self._nodewa('human', subclass_of=['primate']),
-                self._nodewa('primate', instance_of=['taxon'], subclass_of=['entity']),
-                self._nodewa('drosophila', instance_of=['taxon']),
-                self._nodewa('taxon', subclass_of=['entity']),
-                self._nodewa('entity'),
+                _nodewa('sergey', instance_of=['human', 'ceo']),
+                _nodewa('ceo', subclass_of=['human']),
+                _nodewa('human', subclass_of=['primate']),
+                _nodewa('primate', instance_of=['taxon'], subclass_of=['entity']),
+                _nodewa('drosophila', instance_of=['taxon']),
+                _nodewa('taxon', subclass_of=['entity']),
+                _nodewa('entity'),
             ]) 
 
             output = nodes | GatherAncestors()

@@ -6,7 +6,7 @@ import apache_beam as beam
 from apache_beam.pvalue import PCollection
 from apache_beam.transforms.ptransform import PTransform, ptransform_fn
 
-from typing import NamedTuple, List, Set, Tuple, Iterable, TypeVar, Dict
+from typing import NamedTuple, List, Set, Tuple, Iterable, TypeVar, Dict, Optional
 
 
 LeafId = TypeVar('LeafId', int, str)
@@ -178,10 +178,10 @@ class Depth(NamedTuple):
     """
 
     # The number of "instance of" links in the chain.
-    instances: int
+    instances: int = 0
 
     # The number of "subclass of" links in the chain.
-    subclasses: int
+    subclasses: int = 0
 
     def total(self):
         return self.instances + self.subclasses
@@ -202,6 +202,24 @@ class NodeWithAncestors(NamedTuple):
 
     ancestors: Dict[NodeId, Depth]
     unprocessed_ancestors: Set[NodeId]
+
+
+def create_node_with_ancestors(node_id: NodeId, instance_of: Optional[Iterable[NodeId]] = None,
+    subclass_of: Optional[Iterable[NodeId]] = None):
+
+    ancestors = {}
+    if instance_of:
+        for a in instance_of:
+            ancestors[a] = Depth(instances=1)
+    if subclass_of:
+        for a in subclass_of:
+            ancestors[a] = Depth(subclasses=1)
+
+    return NodeWithAncestors(
+        node_id=node_id,
+        ancestors=ancestors,
+        unprocessed_ancestors=set(ancestors.keys()),
+        )
 
 
 @ptransform_fn
