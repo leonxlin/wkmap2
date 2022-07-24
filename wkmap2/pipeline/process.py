@@ -83,6 +83,11 @@ def get_pages(p, args):
 
 
 def get_entities(p, args):
+    kwargs = {
+        'max_lines': args.max_readlines
+    }
+    if not args.verify_headers:
+        kwargs['expected_header'] = None
 
     if args.wikidata_dump:
         return (p
