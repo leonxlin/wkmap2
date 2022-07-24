@@ -6,7 +6,9 @@ import apache_beam as beam
 from apache_beam.metrics import Metrics
 from apache_beam.io import WriteToText
 from apache_beam.pvalue import PCollection
+from apache_beam.transforms.ptransform import PTransform, ptransform_fn
 
+import wkmap2.pipeline.dump_readers as dump_readers
 from wkmap2.pipeline.dump_readers import Entity, Page, Categorylink, QRankEntry
 import wkmap2.pipeline.dag_index as dag_index
 
@@ -128,4 +130,20 @@ def CreateCategoryIndex(
             "node_link", "leaf_parent_link"))
 
     return dag_index.CreateIndex(leaves, leaf_parent_links, node_links)
+
+
+@ptransform_fn
+def GatherEntityAncestors(entities: PCollection[Entity]) -> PCollection[dag_index.NodeWithAncestors]:
+    def init_node_with_ancestors(entity: Entity):
+        if not entity.claims:
+            return dag_index.create_node_with_ancestors(entity.qid)
+        return dag_index.create_node_with_ancestors(
+            entity.qid,
+            instance_of=entity.claims.get(dump_readers.INSTANCE_OF_PID),
+            subclass_of=entity.claims.get(dump_readers.SUBCLASS_OF_PID)
+            )
+
+    nodes = entities | 'InitNodeWithAncestors' >> beam.Map(init_node_with_ancestors)
+    return nodes | 'GatherAncestors' >> dag_index.GatherAncestors()
+
 

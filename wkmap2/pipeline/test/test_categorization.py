@@ -12,7 +12,7 @@ from apache_beam.testing.util import equal_to
 import wkmap2.pipeline.categorization as cat
 from wkmap2.pipeline.categorization import QidAndIsCat
 import wkmap2.pipeline.dump_readers as dump_readers
-from wkmap2.pipeline.dag_index import Node, Leaf
+from wkmap2.pipeline.dag_index import Node, Leaf, NodeWithAncestors, Depth
 
 
 
@@ -69,15 +69,15 @@ class CategorizationTest(unittest.TestCase):
             output = cat.ConvertCategorylinksToQids(categorylinks, pages, entities)
 
             assert_that(
-              output,
-              equal_to([
-                  (QidAndIsCat(5, True), QidAndIsCat(1, False)),
-                  (QidAndIsCat(5, True), QidAndIsCat(4, False)),
-                  (QidAndIsCat(6, True), QidAndIsCat(2, False)),
-                  (QidAndIsCat(6, True), QidAndIsCat(3, False)),
-                  (QidAndIsCat(7, True), QidAndIsCat(5, True)),
-                  (QidAndIsCat(7, True), QidAndIsCat(6, True)),
-              ]))
+                output,
+                equal_to([
+                    (QidAndIsCat(5, True), QidAndIsCat(1, False)),
+                    (QidAndIsCat(5, True), QidAndIsCat(4, False)),
+                    (QidAndIsCat(6, True), QidAndIsCat(2, False)),
+                    (QidAndIsCat(6, True), QidAndIsCat(3, False)),
+                    (QidAndIsCat(7, True), QidAndIsCat(5, True)),
+                    (QidAndIsCat(7, True), QidAndIsCat(6, True)),
+                ]))
 
     def test_create_category_index(self):
         with TestPipeline() as p:
@@ -125,8 +125,8 @@ class CategorizationTest(unittest.TestCase):
             done, _, _ = cat.CreateCategoryIndex(categorylinks, pages, entities, qranks)
 
             assert_that(
-              done,
-              equal_to([
+                done,
+                equal_to([
                     Node(node_id=5,
                         top_leaves=[Leaf(4, 40), Leaf(1, 10)],
                         parents={7},
@@ -142,5 +142,54 @@ class CategorizationTest(unittest.TestCase):
                         parents=set(),
                         children={5, 6},
                         unprocessed_children=set()),
+                ]))
+
+
+    def test_gather_ancestors(self):
+        with TestPipeline() as p:
+            entities = (p 
+                | 'read entities' 
+                >> beam.Create([
+                    dump_readers.Entity(qid=0, claims={31: [1]}),
+                    dump_readers.Entity(qid=1, claims={31: [2]}),
+                    dump_readers.Entity(qid=2, claims={31: [3]}),
+                    dump_readers.Entity(qid=3),
+                    ]))
+
+            output = entities | cat.GatherEntityAncestors()
+
+            assert_that(
+                output,
+                equal_to([
+                    NodeWithAncestors(
+                        node_id=0,
+                        ancestors={
+                            1: Depth(1, 0),
+                            2: Depth(2, 0),
+                            3: Depth(3, 0),
+                            },
+                        unprocessed_ancestors=set(),
+                        ),
+                    NodeWithAncestors(
+                        node_id=1,
+                        ancestors={
+                            2: Depth(1, 0),
+                            3: Depth(2, 0),
+                            },
+                        unprocessed_ancestors=set(),
+                        ),
+                    NodeWithAncestors(
+                        node_id=2,
+                        ancestors={
+                            3: Depth(1, 0),
+                            },
+                        unprocessed_ancestors=set(),
+                        ),
+                    NodeWithAncestors(
+                        node_id=3,
+                        ancestors={},
+                        unprocessed_ancestors=set(),
+                        ),
+
               ]))
 
