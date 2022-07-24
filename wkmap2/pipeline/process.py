@@ -32,10 +32,8 @@ import wkmap2.pipeline.dump_readers as dump_readers
 import wkmap2.pipeline.categorization as categorization
 
 
-def get_categorylinks(p, args):
-    kwargs = {
-        'max_lines': args.max_readlines
-    }
+def get_categorylinks(p, args, **kwargs):
+    kwargs['max_lines'] = args.max_readlines
     if not args.verify_headers:
         kwargs['expected_header'] = None
 
@@ -57,10 +55,8 @@ def get_categorylinks(p, args):
         ]))
 
 
-def get_pages(p, args):
-    kwargs = {
-        'max_lines': args.max_readlines
-    }
+def get_pages(p, args, **kwargs):
+    kwargs['max_lines'] = args.max_readlines
     if not args.verify_headers:
         kwargs['expected_header'] = None
 
@@ -82,10 +78,8 @@ def get_pages(p, args):
         ]))
 
 
-def get_entities(p, args):
-    kwargs = {
-        'max_lines': args.max_readlines
-    }
+def get_entities(p, args, **kwargs):
+    kwargs['max_lines'] = args.max_readlines
     if not args.verify_headers:
         kwargs['expected_header'] = None
 
@@ -108,10 +102,8 @@ def get_entities(p, args):
         ]))
 
 
-def get_qranks(p, args):
-    kwargs = {
-        'max_lines': args.max_readlines
-    }
+def get_qranks(p, args, **kwargs):
+    kwargs['max_lines'] = args.max_readlines
     if not args.verify_headers:
         kwargs['expected_header'] = None
 
@@ -225,7 +217,7 @@ def build_categorization_pipeline(p, args):
 
 
 def build_gather_ancestors_pipeline(p, args):
-    entities = get_entities(p, args)
+    entities = get_entities(p, args, require_title=False)
 
     output = entities | "GatherEntityAncestors" >> categorization.GatherEntityAncestors()
     output | 'WriteOutput' >> WriteToText(os.path.join(args.output, 'gathered_ancestors'))
