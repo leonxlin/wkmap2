@@ -255,3 +255,27 @@ class DagIndexTest(unittest.TestCase):
                         ),
                 ])
             )
+
+
+    def test_gather_ancestors_missing_entity(self):
+        _nodewa = create_node_with_ancestors
+
+        with TestPipeline() as p:
+            nodes = p | "CreateNodes" >> beam.Create([
+                _nodewa('sergey', instance_of=['mystery']),
+            ]) 
+
+            output = nodes | GatherAncestors()
+
+            assert_that(
+                output,
+                equal_to([
+                    NodeWithAncestors(
+                        node_id='sergey',
+                        ancestors={
+                            'mystery': Depth(1, 0),
+                            },
+                        unprocessed_ancestors=set(),
+                        ),
+                ])
+            )

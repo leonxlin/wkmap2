@@ -252,8 +252,13 @@ def RunGatherAncestorsIteration(nodes: PCollection[NodeWithAncestors], current_d
     }
 
     def _process_join_by_edge_anc(join_item):
-        _, dic = join_item
-        assert len(dic['node']) == 1
+        key_node, dic = join_item
+
+        if not dic['node']:
+            logging.warning(f'No node for key {key_node}: {dic}')
+            return
+        elif len(dic['node']) > 1:
+            logging.warning(f'Multiple nodes for key {key_node}: {dic}')
 
         for anc, anc_depth in dic['node'][0].ancestors.items():
             for desc, desc_depth in dic['descendant_and_depth']:
@@ -271,8 +276,13 @@ def RunGatherAncestorsIteration(nodes: PCollection[NodeWithAncestors], current_d
     }
 
     def _process_join_new_anc(join_item):
-        _, dic = join_item
-        assert len(dic['node']) == 1
+        key_node, dic = join_item
+
+        if not dic['node']:
+            logging.warning(f'No node for key {key_node}: {dic}')
+            return
+        elif len(dic['node']) > 1:
+            logging.warning(f'Multiple nodes for key {key_node}: {dic}')
 
         node = dic['node'][0]
         node.unprocessed_ancestors.clear()
