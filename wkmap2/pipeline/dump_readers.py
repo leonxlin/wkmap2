@@ -4,10 +4,12 @@ import logging
 import re
 import glob
 from itertools import islice
-from typing import Optional, NamedTuple, List, Union, AnyStr, Type, TypeVar, Iterator, Iterable, Generic
+from typing import (Optional, NamedTuple, List, Union, AnyStr, Type, TypeVar,
+    Iterator, Iterable, Generic, Dict)
 import json
 import traceback
 import pkg_resources
+from collections import defaultdict
 
 import apache_beam as beam
 from apache_beam.io.textio import ReadAllFromText
@@ -307,12 +309,15 @@ class PageDumpReader(DumpReader):
 
             yield page
 
+Qid = int
+Pid = int
+
 
 class Entity(NamedTuple):
     """Info extracted about a Wikidata entity."""
 
     # E.g., 123 for 'Q123'.
-    qid: int
+    qid: Qid
 
     # enwiki sitelink title, with underscores instead of spaces.
     # Namespace prefix (e.g., 'Category:') included.
@@ -327,10 +332,22 @@ class Entity(NamedTuple):
     # English aliases.
     aliases: Optional[List[str]] = None
 
+    # Statements with an entity value.
+    claims: Dict[Pid, List[Qid]] = None
+
 
 def parse_qid(qid_str: str):
     assert qid_str.startswith('Q')
     return int(qid_str[1:])
+
+
+def parse_pid(pid_str: str):
+    assert pid_str.startswith('P')
+    return int(pid_str[1:])
+
+
+INSTANCE_OF_PID = 31
+SUBCLASS_OF_PID = 279
 
 
 class WikidataJsonDumpReader(DumpReader):
@@ -344,6 +361,7 @@ class WikidataJsonDumpReader(DumpReader):
     def __init__(self,
         pattern: str,
         require_title=False,
+        allowed_properties=(INSTANCE_OF_PID, SUBCLASS_OF_PID),
         **kwargs):
         DumpReader.__init__(self,
             pattern=pattern,
@@ -351,6 +369,53 @@ class WikidataJsonDumpReader(DumpReader):
             **kwargs)
 
         self.require_title = require_title
+        self.allowed_properties = allowed_properties
+
+
+    def parse_claims(self, json_claims: Dict) -> Dict[Pid, List[Qid]]:
+        """Extract statements with an entity value.
+
+        See https://doc.wikimedia.org/Wikibase/master/php/md_docs_topics_json.html#json_statements
+        """
+        ret = defaultdict(list)
+
+        for _pid, records in json_claims.items():
+            pid = parse_pid(_pid)
+            if self.allowed_properties and pid not in self.allowed_properties:
+                continue
+
+            for record in records:
+                if record.get('rank') == 'deprecated':
+                    continue
+
+                if 'mainsnak' not in record:
+                    continue
+                mainsnak = record['mainsnak']
+
+                if mainsnak.get('snaktype') != 'value':
+                    continue
+                if mainsnak.get('datatype') != 'wikibase-item':
+                    continue
+
+                if 'datavalue' not in mainsnak:
+                    continue
+                datavalue = mainsnak['datavalue']
+
+                if datavalue.get('type') != 'wikibase-entityid':
+                    continue
+
+                if 'value' not in datavalue:
+                    continue
+                v = datavalue['value']
+                if v.get('entity-type') != 'item':
+                    continue
+                if 'id' not in v:
+                    continue
+
+                ret[pid].append(parse_qid(v['id']))
+
+        return dict(ret)
+
 
     def parse_line(self, line: str) -> Iterator[Entity]:
         # The JSON dumps look like
@@ -381,6 +446,7 @@ class WikidataJsonDumpReader(DumpReader):
             title=normalized_title,
             label=obj.get('labels', {}).get('en', {}).get('value'),
             aliases=[d['value'] for d in obj.get('aliases', {}).get('en', [])],
+            claims=self.parse_claims(obj.get('claims', {})),
         )
 
         if self.require_title and not e.title:

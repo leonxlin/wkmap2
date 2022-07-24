@@ -34,7 +34,17 @@ class DumpReaderTest(unittest.TestCase):
     def test_wikidata(self):
         reader = dr.WikidataJsonDumpReader(
                     _testdata_path('wikidata-20220704-all-50lines.json'))
-        self.assertEqual(_count(reader), 49)
+        entities = list(reader)
+
+        self.assertEqual(len(entities), 49)
+        self.assertIn(dr.Entity(
+            qid=144,
+            title='Dog',
+            label='dog',
+            sitelinks=295,
+            aliases=['domestic dog', 'Canis lupus familiaris', 'Canis familiaris', 'dogs', '🐶', '🐕'],
+            claims={31: [55983715], 279: [57814795, 39201]},
+        ), entities)
 
 
     def test_wikidata_beam(self):
