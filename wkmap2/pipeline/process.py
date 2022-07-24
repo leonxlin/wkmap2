@@ -32,8 +32,7 @@ import wkmap2.pipeline.dump_readers as dump_readers
 import wkmap2.pipeline.categorization as categorization
 
 
-
-def create_inputs(p, args):
+def get_categorylinks(p, args):
     kwargs = {
         'max_lines': args.max_readlines
     }
@@ -41,74 +40,93 @@ def create_inputs(p, args):
         kwargs['expected_header'] = None
 
     if args.categorylinks_dump:
-        categorylinks = (p
+        return (p
             | 'ReadCategorylinks'
             >> dump_readers.CategorylinksDumpReader(
                 args.categorylinks_dump, **kwargs))
-    else:
-        categorylinks = (p
-            | 'CreateCategorylinks'
-            >> beam.Create([
-                dump_readers.Categorylink(page_id=1, category='Animals'),
-                dump_readers.Categorylink(page_id=2, category='Planets'),
-                dump_readers.Categorylink(page_id=3, category='Planets'),
-                dump_readers.Categorylink(page_id=4, category='Animals'),
-                dump_readers.Categorylink(page_id=5, category='Things'),
-                dump_readers.Categorylink(page_id=6, category='Things'),
-            ]))
+
+    return (p
+        | 'CreateCategorylinks'
+        >> beam.Create([
+            dump_readers.Categorylink(page_id=1, category='Animals'),
+            dump_readers.Categorylink(page_id=2, category='Planets'),
+            dump_readers.Categorylink(page_id=3, category='Planets'),
+            dump_readers.Categorylink(page_id=4, category='Animals'),
+            dump_readers.Categorylink(page_id=5, category='Things'),
+            dump_readers.Categorylink(page_id=6, category='Things'),
+        ]))
+
+
+def get_pages(p, args):
+    kwargs = {
+        'max_lines': args.max_readlines
+    }
+    if not args.verify_headers:
+        kwargs['expected_header'] = None
 
     if args.page_dump:
-        pages = (p
+        return (p
             | 'ReadPages'
             >> dump_readers.PageDumpReader(
                 args.page_dump, **kwargs))
-    else:
-        pages = (p
-            | 'CreatePages'
-            >> beam.Create([
-                dump_readers.Page(page_id=1, title='Beaver'),
-                dump_readers.Page(page_id=2, title='Mercury'),
-                dump_readers.Page(page_id=3, title='Uranus'),
-                dump_readers.Page(page_id=4, title='Ant'),
-                dump_readers.Page(page_id=5, title='Animals', namespace=14),
-                dump_readers.Page(page_id=6, title='Planets', namespace=14),
-                dump_readers.Page(page_id=7, title='Things', namespace=14),
-            ]))
+    return (p
+        | 'CreatePages'
+        >> beam.Create([
+            dump_readers.Page(page_id=1, title='Beaver'),
+            dump_readers.Page(page_id=2, title='Mercury'),
+            dump_readers.Page(page_id=3, title='Uranus'),
+            dump_readers.Page(page_id=4, title='Ant'),
+            dump_readers.Page(page_id=5, title='Animals', namespace=14),
+            dump_readers.Page(page_id=6, title='Planets', namespace=14),
+            dump_readers.Page(page_id=7, title='Things', namespace=14),
+        ]))
+
+
+def get_entities(p, args):
 
     if args.wikidata_dump:
-        entities = (p
+        return (p
             | 'ReadEntities'
             >> dump_readers.WikidataJsonDumpReader(
                 args.wikidata_dump, require_title=True, **kwargs))
-    else:
-        entities = (p
-            | 'read entities'
-            >> beam.Create([
-                dump_readers.Entity(qid=5, title='Category:Animals'),
-                dump_readers.Entity(qid=6, title='Category:Planets'),
-                dump_readers.Entity(qid=7, title='Category:Things'),
-                dump_readers.Entity(qid=1, title='Beaver'),
-                dump_readers.Entity(qid=2, title='Mercury'),
-                dump_readers.Entity(qid=3, title='Uranus'),
-                dump_readers.Entity(qid=4, title='Ant'),
-            ]))
+
+    return (p
+        | 'CreateEntities'
+        >> beam.Create([
+            dump_readers.Entity(qid=5, title='Category:Animals', claims={279: [7]}),
+            dump_readers.Entity(qid=6, title='Category:Planets', claims={279: [7]}),
+            dump_readers.Entity(qid=7, title='Category:Things'),
+            dump_readers.Entity(qid=1, title='Beaver', claims={279: [5]}),
+            dump_readers.Entity(qid=2, title='Mercury', claims={279: [6, 7]}),
+            dump_readers.Entity(qid=3, title='Uranus', claims={279: [6]}),
+            dump_readers.Entity(qid=4, title='Ant', claims={279: [5]}),
+        ]))
+
+
+def get_qranks(p, args):
+    kwargs = {
+        'max_lines': args.max_readlines
+    }
+    if not args.verify_headers:
+        kwargs['expected_header'] = None
 
     if args.qrank_dump:
-        qranks = (p
+        return (p
             | 'ReadQRanks'
             >> dump_readers.QRankDumpReader(
                 args.qrank_dump, **kwargs))
-    else:
-        qranks = (p
-            | 'read qranks'
-            >> beam.Create([
-                dump_readers.QRankEntry(qid=1, qrank=10),
-                dump_readers.QRankEntry(qid=2, qrank=20),
-                dump_readers.QRankEntry(qid=3, qrank=30),
-                dump_readers.QRankEntry(qid=4, qrank=40),
-            ]))
+    return (p
+        | 'CreateQRanks'
+        >> beam.Create([
+            dump_readers.QRankEntry(qid=1, qrank=10),
+            dump_readers.QRankEntry(qid=2, qrank=20),
+            dump_readers.QRankEntry(qid=3, qrank=30),
+            dump_readers.QRankEntry(qid=4, qrank=40),
+        ]))
 
-    return categorylinks, pages, entities, qranks
+
+def create_inputs(p, args):
+    return get_categorylinks(p, args), get_pages(p, args), get_entities(p, args), get_qranks(p, args)
 
 
 def get_metrics_str(pipeline):
@@ -201,52 +219,63 @@ def build_categorization_pipeline(p, args):
     #         | 'WriteDoneNodesToDatastore' >> WriteToDatastore(project))
 
 
+def build_gather_ancestors_pipeline(p, args):
+    entities = get_entities(p, args)
+
+    output = entities | "GatherEntityAncestors" >> categorization.GatherEntityAncestors()
+    output | 'WriteOutput' >> WriteToText(os.path.join(args.output, 'gathered_ancestors'))
+
 
 def run(argv=None, save_main_session=True):
     parser = argparse.ArgumentParser()
     parser.add_argument(
-      '--categorylinks-dump',
-      type=str,
-      help='Path to copy of enwiki-????????-categorylinks.sql[.gz] (local or GCS).')
+        '--task',
+        default='cat',
+        type=str,
+        help='"cat" or "gather"')
     parser.add_argument(
-      '--page-dump',
-      type=str,
-      help='Path to copy of enwiki-????????-page.sql[.gz] (local or GCS).')
+        '--categorylinks-dump',
+        type=str,
+        help='Path to copy of enwiki-????????-categorylinks.sql[.gz] (local or GCS).')
     parser.add_argument(
-      '--wikidata-dump',
-      type=str,
-      help='Path to copy of wikidata-????????-all.json[.gz] (local or GCS).')
+        '--page-dump',
+        type=str,
+        help='Path to copy of enwiki-????????-page.sql[.gz] (local or GCS).')
     parser.add_argument(
-      '--qrank-dump',
-      type=str,
-      help='Path to copy of qrank.csv[.gz] (local or GCS).')
+        '--wikidata-dump',
+        type=str,
+        help='Path to copy of wikidata-????????-all.json[.gz] (local or GCS).')
     parser.add_argument(
-      '--max-readlines',
-      type=int,
-      dest='max_readlines',
-      default=None,
-      help='Maximum number of lines to read from each dumpfile.')
+        '--qrank-dump',
+        type=str,
+        help='Path to copy of qrank.csv[.gz] (local or GCS).')
     parser.add_argument(
-      '--verify-headers',
-      default=True,
-      action='store_true',
-      help='Verify that dump file "headers" match known schema.')
+        '--max-readlines',
+        type=int,
+        dest='max_readlines',
+        default=None,
+        help='Maximum number of lines to read from each dumpfile.')
     parser.add_argument(
-      '--no-verify-headers',
-      dest='verify_headers',
-      action='store_false',
-      help='Skip verification of dump file "headers". Use this setting for '
-        'sharded dump files.')
+        '--verify-headers',
+        default=True,
+        action='store_true',
+        help='Verify that dump file "headers" match known schema.')
     parser.add_argument(
-      '--datastore',
-      default=False,
-      action='store_true',
-      help='Write some values to datastore.')
+        '--no-verify-headers',
+        dest='verify_headers',
+        action='store_false',
+        help='Skip verification of dump file "headers". Use this setting for '
+            'sharded dump files.')
     parser.add_argument(
-      '--output',
-      type=str,
-      default='/tmp/process_out/',
-      help='An output directory.')
+        '--datastore',
+        default=False,
+        action='store_true',
+        help='Write some values to datastore.')
+    parser.add_argument(
+        '--output',
+        type=str,
+        default='/tmp/process_out/',
+        help='An output directory.')
     args, pipeline_args = parser.parse_known_args(argv)
 
     pipeline_options = PipelineOptions(pipeline_args)
@@ -255,7 +284,10 @@ def run(argv=None, save_main_session=True):
 
     p = None
     with beam.Pipeline(options=pipeline_options) as p:
-        build_categorization_pipeline(p, args)
+        if args.task == 'cat':
+            build_categorization_pipeline(p, args)
+        elif args.task == 'gather':
+            build_gather_ancestors_pipeline(p, args)
 
     with smart_open(os.path.join(args.output, 'metrics'), 'w') as metrics_file:
         metrics_file.write(get_metrics_str(p))
