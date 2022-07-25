@@ -147,3 +147,26 @@ def GatherEntityAncestors(entities: PCollection[Entity]) -> PCollection[dag_inde
     return nodes | 'GatherAncestors' >> dag_index.GatherAncestors()
 
 
+
+
+@ptransform_fn
+def CountChildren(entities: PCollection[Entity], topn=1000) -> PCollection[Tuple[int, int]]:
+    def _emit_parents(entity: Entity):
+        if not entity.claims:
+            return
+        for parent in entity.claims.get(dump_readers.INSTANCE_OF_PID, []):
+            yield parent
+        for parent in entity.claims.get(dump_readers.SUBCLASS_OF_PID, []):
+            yield parent
+
+    parents = entities | 'EmitParents' >> beam.FlatMap(_emit_parents)
+
+    def _compare_element_and_counts(a, b):
+        # Counts are at index 1 of the pairs.
+        return a[1] < b[1]
+
+    return (parents | 'CountEmitted' >> beam.transforms.combiners.Count.PerElement()
+        | 'Swap' >> beam.Map(_swap_pair)
+        | 'TopN' >> beam.transforms.combiners.Top.Largest(topn))
+
+

@@ -227,13 +227,20 @@ def build_gather_ancestors_pipeline(p, args):
     output | 'WriteOutput' >> WriteToText(os.path.join(args.output, 'gathered_ancestors'))
 
 
+def build_count_children_pipeline(p, args):
+    entities = get_entities(p, args, require_title=False)
+
+    output = entities | "CountChildren" >> categorization.CountChildren(topn=10000)
+    output | 'WriteOutput' >> WriteToText(os.path.join(args.output, 'top_parents'))
+
+
 def run(argv=None, save_main_session=True):
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--task',
         default='cat',
         type=str,
-        help='"cat" or "gather"')
+        help='"cat" or "gather" or "count_children"')
     parser.add_argument(
         '--categorylinks-dump',
         type=str,
@@ -289,6 +296,8 @@ def run(argv=None, save_main_session=True):
             build_categorization_pipeline(p, args)
         elif args.task == 'gather':
             build_gather_ancestors_pipeline(p, args)
+        elif args.task == 'count_children':
+            build_count_children_pipeline(p, args)
 
     with smart_open(os.path.join(args.output, 'metrics'), 'w') as metrics_file:
         metrics_file.write(get_metrics_str(p))

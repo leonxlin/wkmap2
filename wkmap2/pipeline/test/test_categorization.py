@@ -193,3 +193,32 @@ class CategorizationTest(unittest.TestCase):
 
               ]))
 
+
+    def test_count_children(self):
+        with TestPipeline() as p:
+            entities = (p 
+                | 'read entities' 
+                >> beam.Create([
+                    dump_readers.Entity(qid=0, claims={279: [1, 5]}),
+                    dump_readers.Entity(qid=1, claims={31: [2, 3]}),
+                    dump_readers.Entity(qid=2, claims={31: [3]}),
+                    dump_readers.Entity(qid=3),
+                    dump_readers.Entity(qid=4, claims={31: [2, 5]}),
+                    dump_readers.Entity(qid=5, claims={31: [2]}),
+                    dump_readers.Entity(qid=6, claims={279: [2]}),
+                    dump_readers.Entity(qid=7, claims={31: [5]}),
+                    dump_readers.Entity(qid=8, claims={31: [5]}),
+                    dump_readers.Entity(qid=9, claims={31: [5]}),
+                    dump_readers.Entity(qid=10, claims={31: [9]}),
+                    ]))
+
+            output = entities | cat.CountChildren(topn=3)
+
+            assert_that(
+                output,
+                equal_to([[
+                    (5, 5),
+                    (4, 2),
+                    (2, 3),
+              ]]))
+
