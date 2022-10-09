@@ -91,8 +91,6 @@ def should_keep_entity(args, entity):
         set(entity.claims.get(dump_readers.INSTANCE_OF_PID, [])) | 
         set(entity.claims.get(dump_readers.SUBCLASS_OF_PID, [])))
     bad_parents = set(args.excluded_classes)
-
-    logging.info(f"bad parents: {bad_parents}")
     return not (parents & bad_parents)
 
 
