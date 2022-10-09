@@ -1,9 +1,14 @@
-"""Example invocation:
+"""Example invocations:
 
-python3 -m pipeline.process \
---categorylinks_dump=pipeline/testdata/enwiki-20220701-categorylinks-50lines.sql \
---wikidata_dump=pipeline/testdata/wikidata-20220704-all-50lines.json \
---page_dump=pipeline/testdata/enwiki-20220701-page-55lines.sql
+python3 -m wkmap2.pipeline.process \
+--categorylinks-dump=wkmap2/pipeline/testdata/enwiki-20220701-categorylinks-50lines.sql \
+--wikidata-dump=wkmap2/pipeline/testdata/wikidata-20220704-all-50lines.json \
+--page-dump=wkmap2/pipeline/testdata/enwiki-20220701-page-55lines.sql
+
+python3 -m wkmap2.pipeline.process \
+--task=count_children \
+--wikidata-dump=wkmap2/pipeline/testdata/wikidata-20220704-all-50lines.json \
+--exclude-class=6256
 
 (Output will be empty as the test data is insufficient.)
 """
@@ -14,6 +19,7 @@ import json
 import logging
 import os
 
+from functools import partial
 from typing import NamedTuple, List
 
 import apache_beam as beam
@@ -78,28 +84,43 @@ def get_pages(p, args, **kwargs):
         ]))
 
 
+def should_keep_entity(args, entity):
+    if not entity.claims or not args.excluded_classes:
+        return True
+    parents = (
+        set(entity.claims.get(dump_readers.INSTANCE_OF_PID, [])) | 
+        set(entity.claims.get(dump_readers.SUBCLASS_OF_PID, [])))
+    bad_parents = set(args.excluded_classes)
+
+    logging.info(f"bad parents: {bad_parents}")
+    return not (parents & bad_parents)
+
+
 def get_entities(p, args, **kwargs):
     kwargs['max_lines'] = args.max_readlines
     if not args.verify_headers:
         kwargs['expected_header'] = None
 
     if args.wikidata_dump:
-        return (p
+        entities = (p
             | 'ReadEntities'
             >> dump_readers.WikidataJsonDumpReader(
                 args.wikidata_dump, **kwargs))
+    else:
+        entities = (p
+            | 'CreateEntities'
+            >> beam.Create([
+                dump_readers.Entity(qid=5, title='Category:Animals', claims={279: [7]}),
+                dump_readers.Entity(qid=6, title='Category:Planets', claims={279: [7]}),
+                dump_readers.Entity(qid=7, title='Category:Things'),
+                dump_readers.Entity(qid=1, title='Beaver', claims={279: [5]}),
+                dump_readers.Entity(qid=2, title='Mercury', claims={279: [6, 7]}),
+                dump_readers.Entity(qid=3, title='Uranus', claims={279: [6]}),
+                dump_readers.Entity(qid=4, title='Ant', claims={279: [5]}),
+            ]))
 
-    return (p
-        | 'CreateEntities'
-        >> beam.Create([
-            dump_readers.Entity(qid=5, title='Category:Animals', claims={279: [7]}),
-            dump_readers.Entity(qid=6, title='Category:Planets', claims={279: [7]}),
-            dump_readers.Entity(qid=7, title='Category:Things'),
-            dump_readers.Entity(qid=1, title='Beaver', claims={279: [5]}),
-            dump_readers.Entity(qid=2, title='Mercury', claims={279: [6, 7]}),
-            dump_readers.Entity(qid=3, title='Uranus', claims={279: [6]}),
-            dump_readers.Entity(qid=4, title='Ant', claims={279: [5]}),
-        ]))
+    return entities | "Filter excluded classes" >> beam.Filter(
+        partial(should_keep_entity, args))
 
 
 def get_qranks(p, args, **kwargs):
@@ -274,6 +295,12 @@ def run(argv=None, save_main_session=True):
         action='store_false',
         help='Skip verification of dump file "headers". Use this setting for '
             'sharded dump files.')
+    parser.add_argument(
+        '--exclude-class',
+        type=int,
+        nargs='+',
+        dest='excluded_classes',
+        help='QIDs (ints) to exclude when gathering ancestors. Can specify multiple.')
     parser.add_argument(
         '--datastore',
         default=False,
