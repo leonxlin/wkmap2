@@ -21,7 +21,7 @@ class ShardedKey(NamedTuple):
 
 
 @ptransform_fn
-def ShardedGroupBy(
+def ShardedGroupByKey(
 	sources: Dict[str, Dict[str, PCollection[Tuple[K, Any]]]], 
 	max_items_per_shard=10000):
 	"""

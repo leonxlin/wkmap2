@@ -9,6 +9,8 @@ from apache_beam.transforms.util import Reshuffle
 
 from typing import NamedTuple, List, Set, Tuple, Iterable, TypeVar, Dict, Optional
 
+from wkmap2.pipeline.sharded_group_by import ShardedGroupByKey
+
 
 LeafId = TypeVar('LeafId', int, str)
 NodeId = TypeVar('NodeId', int, str)
@@ -248,8 +250,12 @@ def RunGatherAncestorsIteration(nodes: PCollection[NodeWithAncestors], current_d
             yield ancestor, (node.node_id, depth)
 
     sources = {
-        'node': id_to_node,
-        'descendant_and_depth': nodes | 'EmitUnprocessed' >> beam.FlatMap(_emit_unprocessed)
+        'shardable': {
+            'descendant_and_depth': nodes | 'EmitUnprocessed' >> beam.FlatMap(_emit_unprocessed)
+        },
+        'unshardable': {
+            'node': id_to_node,
+        }
     }
 
     def _process_join_by_edge_anc(join_item):
@@ -268,9 +274,8 @@ def RunGatherAncestorsIteration(nodes: PCollection[NodeWithAncestors], current_d
 
 
     new_links = (sources 
-        | 'JoinByEdgeAncestor' >> beam.CoGroupByKey()
-        | 'ProcessJoinByEdgeAncestor' >> beam.FlatMap(_process_join_by_edge_anc)
-        | 'ReshuffleAfterJoinByEdgeAncestor' >> Reshuffle())
+        | 'JoinByEdgeAncestor' >> ShardedGroupByKey()
+        | 'ProcessJoinByEdgeAncestor' >> beam.FlatMap(_process_join_by_edge_anc))
 
     sources = {
         'node': id_to_node,
@@ -296,7 +301,6 @@ def RunGatherAncestorsIteration(nodes: PCollection[NodeWithAncestors], current_d
                 node.unprocessed_ancestors.add(ancestor)
 
         return node
-
 
     return (sources 
         | 'JoinNewAncestors' >> beam.CoGroupByKey()

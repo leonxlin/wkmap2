@@ -10,7 +10,7 @@ from apache_beam.testing.util import assert_that, equal_to, contains_in_any_orde
 from apache_beam.testing.util import equal_to, is_empty
 
 
-from wkmap2.pipeline.sharded_group_by import ShardedGroupBy
+from wkmap2.pipeline.sharded_group_by import ShardedGroupByKey
 
 
 
@@ -55,7 +55,7 @@ class ShardedGroupByTest(unittest.TestCase):
             			yield key, v2, v1
 
             output = (sources 
-            	| ShardedGroupBy(max_items_per_shard=3)
+            	| ShardedGroupByKey(max_items_per_shard=3)
             	| beam.ParDo(process_join))
 
             assert_that(
